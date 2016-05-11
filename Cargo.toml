@@ -1,0 +1,7 @@
+[package]
+name = "basic_example"
+version = "0.1.0"
+authors = ["Pierre Donat-Bouillud <pierre.donat-bouillud@ircam.fr>"]
+
+[dependencies]
+libc = "0.2.11"
