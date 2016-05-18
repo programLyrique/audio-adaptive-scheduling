@@ -1,7 +1,7 @@
 //! # Simple binding to libsamplerate
 //!
-use libc::{c_int, c_float, c_long, c_double};
-
+use libc::{c_int, c_float, c_long, c_double, c_char};
+use std::ffi::CStr;
 
 #[repr(C)]
 struct src_data {
@@ -29,6 +29,8 @@ pub enum ConverterType {
 #[link(name ="samplerate")]
 extern {
     fn src_simple(src_data : *mut src_data, converter_type : ConverterType, channels : c_int) -> c_int;
+
+    fn src_strerror(error : c_int) -> *const c_char;
 }
 
 
@@ -66,7 +68,7 @@ struct Resampler<'a> {
 }
 
 impl<'a> Resampler<'a> {
-    pub fn resample_simple(&mut self, converter_type : ConverterType, channels : u32) -> Option<u64> {
+    pub fn resample_simple(&mut self, converter_type : ConverterType, channels : u32) -> Result<u64, &str> {
         let mut src_data = src_data {
             data_in : self.data_in.as_ptr(),
             data_out : self.data_out.as_mut_ptr(),
@@ -81,10 +83,15 @@ impl<'a> Resampler<'a> {
         let result = unsafe { src_simple(&mut src_data as *mut src_data, converter_type, channels as c_int) };
 
         if 0 == result  {
-            return Some(src_data.output_frames_gen as u64);
+            return Ok(src_data.output_frames_gen as u64);
         }
         else {
-            return None
+            let str_error = unsafe { CStr::from_ptr(src_strerror(result)) };
+            return Err(str_error.to_str().unwrap())
         }
+    }
+
+    pub fn new(data_in : &'a[f32], data_out : &'a mut [f32], src_ratio : f64) -> Resampler<'a> {
+        Resampler {data_in : data_in, data_out : data_out, src_ratio : src_ratio}
     }
 }
