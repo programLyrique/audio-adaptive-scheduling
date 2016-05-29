@@ -84,6 +84,18 @@ impl<'a> SndFile<'a> {
         };
         samples
     }
+
+    pub fn nb_channels(&self) -> usize {
+        self.sfinfo.channels as usize
+    }
+
+    pub fn samplerate(&self) -> f64 {
+        self.sfinfo.samplerate as f64
+    }
+
+    pub fn nb_frames(&self) -> u32 {
+        self.sfinfo.frames as u32
+    }
 }
 
 

@@ -10,3 +10,5 @@ name = "basic_example"
 [dependencies]
 libc = "0.2.11"
 rustbox = "*"
+portaudio = "*"
+rand = "0.3"
