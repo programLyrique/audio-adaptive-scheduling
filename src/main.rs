@@ -2,13 +2,13 @@ extern crate basic_example;
 extern crate rustbox;
 extern crate portaudio;
 extern crate rand;
+extern crate time;
 
 use std::env;
 use basic_example::sndfile::*;
 
 use std::sync::mpsc;
-use std::sync::Arc;
-use std::cell::RefCell;
+use std::thread;
 
 use std::error::Error;
 
@@ -16,10 +16,19 @@ use rustbox::Key;
 use rustbox::{Color, RustBox};
 
 use portaudio as pa;
-//TODO : cpu_load function of portaudio?
-// And other metric such as time when we got a buffer, and time when the buffer should be used
 
-use rand::Rng;
+use std::io::prelude::*;
+use std::fs::File;
+
+
+use time::{PreciseTime, Duration};
+
+#[derive(Debug)]
+struct TimeMonitoring {
+    pub current_invocation : f64,//When the audio callback is invoked
+    pub buffer_dac : f64, // when the first sample of the output buffer will be send to the DAC
+    pub audio_processing : Duration,//duration between beginning of callback and when the audio processing has been finished in the audio callback
+}
 
 
 fn main() {
@@ -40,23 +49,45 @@ fn main() {
      * Playback with portaudio
      */
 
-    //  let mut prev_time = None;
-    //  let mut timer: f64 = 10.0;
-     let mut rng = rand::weak_rng();
+     //Thread to monitor the audio callback
+     let (tx_monit_exec, rx_monit_exec) = mpsc::channel::<TimeMonitoring>();
 
-     //let chunk_audio_stream : Vec<&[f32]>= audiostream.chunks(nb_frames as usize * nb_channels).collect();
-     //let nb_chunks = chunk_audio_stream.len();
-     //let mut chunk_number = 0;
+     thread::spawn(move || {
+         let mut f = File::create("execution_audio").expect("Impossible to report execution times");
 
+         f.write_all(b"CurrentInvocation\tBufferDac\tAudioProcNS\n").unwrap();
+         while let Ok(monitoring_infos) = rx_monit_exec.recv() {
+             let duration : Duration = monitoring_infos.audio_processing;
+             let seria = format!("{}\t{}\t{}\n", monitoring_infos.current_invocation, monitoring_infos.buffer_dac, duration.num_nanoseconds().unwrap());
+             f.write_all(seria.as_bytes()).unwrap();
+         }
+
+     });
+
+     //Monitoring thread for the volume
+     let (tx_monit_vol, rx_monit_vol) = mpsc::channel();
+
+     thread::spawn(move || {
+         println!("Monitoring inter-communication for audio thread");
+         loop {
+             match rx_monit_vol.recv() {
+                 Ok(v) => println!("Change in volume detected: {}", v),
+                 Err(e) => {println!("Error in observer thread: {}", e.description());break}
+             };
+         }
+     });
+
+     //Audio callback and audio callback communication
+     let (tx, rx) = mpsc::channel();
+     let volume = 5;
      let mut chunk_it = 0;
 
-     let mut volume = 0.5;
-
-     let (tx, rx) = mpsc::channel();
-
      let callback = move |pa::OutputStreamCallbackArgs {buffer, frames, time, flags}| {
-         volume = rx.try_recv().unwrap_or(volume);//Update volume if new value
+         let start = PreciseTime::now();
 
+         let volume = rx.try_recv().and_then(|v| {tx_monit_vol.send(v).unwrap(); Ok(v)}).unwrap_or(volume);
+
+         let vol = volume as f32 / 10.;
          let nb_samples = frames * nb_channels;
 
          /*
@@ -77,6 +108,17 @@ fn main() {
         if chunk_it  < audiostream.len() {
             //buffer.clone_from_slice(chunk_audio_stream[chunk_number]);
             buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
+            for  sample in buffer.iter_mut() {
+                *sample = *sample * vol;
+            }
+            //Send monitoring infos
+            let duration = start.to(PreciseTime::now());
+            tx_monit_exec.send(TimeMonitoring {
+                    current_invocation : time.current,
+                    buffer_dac : time.buffer_dac,
+                    audio_processing : duration
+                }).unwrap();
+
             chunk_it += nb_samples;
             pa::Continue
         }
@@ -111,18 +153,24 @@ fn main() {
     rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
     rustbox.present();
 
-    let mut vol = 0.5;
+    let mut vol = 5;
     loop {
         rustbox.clear();
         rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
         rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
+
+        // let cpu_load = stream.cpu_load();
+        // let stream_infos = stream.info();
+        // rustbox.print(1, 5, rustbox::RB_BOLD, Color::White, Color::Black,
+        //     &format!("CPU load {} ; Input latency: {}s ; Output latency: {}", cpu_load, stream_infos.input_latency, stream_infos.output_latency));
+
         match rustbox.poll_event(false) {
             Ok(rustbox::Event::KeyEvent(key)) => {
                 match key {
-                    Key::Up => {vol += 0.1; rustbox.print(6, 6, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Up : {}", vol));},
-                    Key::Down => {vol -= 0.1; rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Down : {}", vol));},
+                    Key::Up => {vol += 1; tx.send(vol).unwrap();rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Up : {}", vol));},
+                    Key::Down => {vol -= 1; tx.send(vol).unwrap(); rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Down : {}", vol));},
                     Key::Char('q') => {
-                        stream.stop();
+                        stream.stop().unwrap();
                         break;},
                     _ => {}
                 }
@@ -130,9 +178,12 @@ fn main() {
             Err(e) => panic!("{}", e.description()),
             _ => {}
         };
-        tx.send(vol);
+        if !stream.is_active().unwrap() {
+            break;
+        }
+
         rustbox.present();
     }
 
-    stream.close();
+    stream.close().unwrap();
 }

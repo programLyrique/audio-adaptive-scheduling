@@ -124,6 +124,10 @@ impl<'a> Resampler<'a> {
         }
     }
 
+    pub fn reset(&mut self) {
+        unsafe {src_reset(self.src_state)};
+    }
+
     pub fn next_buffer_last(&mut self) {
         self.end_of_input = true;
     }
@@ -168,6 +172,8 @@ mod tests {
     use rand;
     use rand::{Rng, SeedableRng, StdRng};
     use std::f64;
+    #[cfg(bench)]
+    use test::Bencher;
 
     #[test]
     pub fn identity_test() {
@@ -209,4 +215,23 @@ mod tests {
 
         assert!(sre.abs() <= 0.5);
     }
+
+    /*
+    #[bench]
+    fn bench_resample_best_sync(b : &mut Bencher) {
+        let seed : &[_] = &[1, 21, 37, 4];
+        let mut rng : StdRng = SeedableRng::from_seed(seed);
+        let  input_buffer = (0..1024).map(|_| rng.gen::<f32>()).collect::<Vec<_>>();
+        let mut output_buffer  = vec![0.;2048];
+
+
+        let mut upsampler = Resampler::new(ConverterType::SincBestQuality, 1, 2.);
+        //upsampler.next_buffer_last();
+
+        b.iter( || {
+            upsampler.reset();
+            upsampler.next_buffer_last();
+            upsampler.resample(&input_buffer[..], &mut output_buffer[..]);}
+            );
+    */
 }
