@@ -8,6 +8,7 @@ use std::env;
 use basic_example::sndfile::*;
 
 use std::sync::mpsc;
+use std::sync::mpsc::TryRecvError;
 use std::thread;
 
 use std::error::Error;
@@ -20,6 +21,8 @@ use portaudio as pa;
 use std::io::prelude::*;
 use std::fs::File;
 
+
+const FRAMES_PER_BUFFER : u32 = 64;
 
 use time::{PreciseTime, Duration};
 
@@ -38,7 +41,7 @@ fn main() {
     let mut sndfile = SndFile::open(&args[1]).expect("Error while opening file");
     let nb_channels = sndfile.nb_channels();
     let samplerate = sndfile.samplerate();
-    let nb_frames = sndfile.nb_frames();
+    let nb_frames = FRAMES_PER_BUFFER;
 
     let audiostream = sndfile.readf_float_all();
 
@@ -56,36 +59,27 @@ fn main() {
          let mut f = File::create("execution_audio").expect("Impossible to report execution times");
 
          f.write_all(b"CurrentInvocation\tBufferDac\tAudioProcNS\n").unwrap();
-         while let Ok(monitoring_infos) = rx_monit_exec.recv() {
+        for monitoring_infos in rx_monit_exec.iter() {
              let duration : Duration = monitoring_infos.audio_processing;
              let seria = format!("{}\t{}\t{}\n", monitoring_infos.current_invocation, monitoring_infos.buffer_dac, duration.num_nanoseconds().unwrap());
              f.write_all(seria.as_bytes()).unwrap();
-         }
+        }
+         println!("End monitoring execution times because {:?}", rx_monit_exec.recv().unwrap_err().description());
 
-     });
-
-     //Monitoring thread for the volume
-     let (tx_monit_vol, rx_monit_vol) = mpsc::channel();
-
-     thread::spawn(move || {
-         println!("Monitoring inter-communication for audio thread");
-         loop {
-             match rx_monit_vol.recv() {
-                 Ok(v) => println!("Change in volume detected: {}", v),
-                 Err(e) => {println!("Error in observer thread: {}", e.description());break}
-             };
-         }
      });
 
      //Audio callback and audio callback communication
-     let (tx, rx) = mpsc::channel();
-     let volume = 5;
+     let ( tx,  rx) = mpsc::channel();
+     let mut volume = 5;
      let mut chunk_it = 0;
 
-     let callback = move |pa::OutputStreamCallbackArgs {buffer, frames, time, flags}| {
+     let callback = move |pa::OutputStreamCallbackArgs {buffer, frames, time, ..}| {
          let start = PreciseTime::now();
 
-         let volume = rx.try_recv().and_then(|v| {tx_monit_vol.send(v).unwrap(); Ok(v)}).unwrap_or(volume);
+         //volume = rx.try_recv().and_then(|v| {tx_monit_vol.send(v).unwrap(); Ok(v)}).unwrap_or(volume);
+         while let Ok(val) = rx.try_recv() {
+             volume = val;
+         }
 
          let vol = volume as f32 / 10.;
          let nb_samples = frames * nb_channels;
@@ -105,8 +99,8 @@ fn main() {
             panic!("Not equal number of frames in output and input.")
         }
 
-        if chunk_it  < audiostream.len() {
-            //buffer.clone_from_slice(chunk_audio_stream[chunk_number]);
+        if chunk_it  < audiostream.len() - 1 {//Don't play the last chunk as it is smaller than the normal one
+            //The best would be too copy zeroes at the end...
             buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
             for  sample in buffer.iter_mut() {
                 *sample = *sample * vol;
@@ -154,10 +148,11 @@ fn main() {
     rustbox.present();
 
     let mut vol = 5;
-    loop {
+    while stream.is_active().unwrap() {
         rustbox.clear();
         rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
         rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
+
 
         // let cpu_load = stream.cpu_load();
         // let stream_infos = stream.info();
@@ -178,12 +173,20 @@ fn main() {
             Err(e) => panic!("{}", e.description()),
             _ => {}
         };
-        if !stream.is_active().unwrap() {
-            break;
-        }
 
         rustbox.present();
     }
+
+    // let mut vol = 5;
+    // while stream.is_active().unwrap() {
+    //     pa.sleep(1000);
+    //     vol = (vol+1) % 10;
+    //     println!("At {}s, volume is now: {}", time::precise_time_s(), vol);
+    //     tx.send(vol).unwrap();
+    // }
+    // tx.send(vol).unwrap();
+
+    println!("End of playback");
 
     stream.close().unwrap();
 }
