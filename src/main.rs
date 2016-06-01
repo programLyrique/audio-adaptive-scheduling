@@ -6,9 +6,9 @@ extern crate time;
 
 use std::env;
 use basic_example::sndfile::*;
+use basic_example::samplerate::*;
 
 use std::sync::mpsc;
-use std::sync::mpsc::TryRecvError;
 use std::thread;
 
 use std::error::Error;
@@ -70,18 +70,22 @@ fn main() {
 
      //Audio callback and audio callback communication
      let ( tx,  rx) = mpsc::channel();
-     let mut volume = 5;
+     let mut up_ratio = 2.;
      let mut chunk_it = 0;
+
+     //Resampling apparatus...
+     let mut upsampler = Resampler::new(ConverterType::Linear, nb_channels as u32, up_ratio);
+     let mut downsampler = Resampler::new(ConverterType::Linear, nb_channels as u32, 1. / up_ratio);
+
+     let mut interm_buffer = vec![0.;FRAMES_PER_BUFFER as usize *up_ratio as usize];
 
      let callback = move |pa::OutputStreamCallbackArgs {buffer, frames, time, ..}| {
          let start = PreciseTime::now();
 
-         //volume = rx.try_recv().and_then(|v| {tx_monit_vol.send(v).unwrap(); Ok(v)}).unwrap_or(volume);
          while let Ok(val) = rx.try_recv() {
-             volume = val;
+             up_ratio = val;
          }
 
-         let vol = volume as f32 / 10.;
          let nb_samples = frames * nb_channels;
 
          /*
@@ -99,12 +103,28 @@ fn main() {
             panic!("Not equal number of frames in output and input.")
         }
 
-        if chunk_it  < audiostream.len() - 1 {//Don't play the last chunk as it is smaller than the normal one
+        if chunk_it  < audiostream.len() - FRAMES_PER_BUFFER  as usize * nb_channels {
+            //We don't play the last chunk as it is smaller than the normal one
             //The best would be too copy zeroes at the end...
-            buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
-            for  sample in buffer.iter_mut() {
-                *sample = *sample * vol;
-            }
+
+
+            let input_buffer = &audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())];
+
+            //upsample
+            let gen1 = upsampler.resample(input_buffer, &mut interm_buffer[..]);
+            assert_eq!(gen1.unwrap(), FRAMES_PER_BUFFER as u64 * up_ratio as u64);
+
+            //Do some processing
+            //buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
+            // for  sample in buffer.iter_mut() {
+            //     *sample = *sample;
+            // }
+            //
+
+            //downsample
+            let gen2 = downsampler.resample(&interm_buffer[..], &mut buffer[..]);
+            assert_eq!(gen2.unwrap(), FRAMES_PER_BUFFER as u64);
+
             //Send monitoring infos
             let duration = start.to(PreciseTime::now());
             tx_monit_exec.send(TimeMonitoring {
@@ -117,6 +137,7 @@ fn main() {
             pa::Continue
         }
         else {
+            upsampler.next_buffer_last();
             pa::Complete
         }
      };
@@ -147,12 +168,12 @@ fn main() {
     rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
     rustbox.present();
 
-    let mut vol = 5;
+    let mut ratio = 2.;
     while stream.is_active().unwrap() {
         rustbox.clear();
         rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
         rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
-
+        rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Ratio : {}", ratio));
 
         // let cpu_load = stream.cpu_load();
         // let stream_infos = stream.info();
@@ -162,8 +183,8 @@ fn main() {
         match rustbox.poll_event(false) {
             Ok(rustbox::Event::KeyEvent(key)) => {
                 match key {
-                    Key::Up => {vol += 1; tx.send(vol).unwrap();rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Up : {}", vol));},
-                    Key::Down => {vol -= 1; tx.send(vol).unwrap(); rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Down : {}", vol));},
+                    Key::Up => {ratio += 0.1; tx.send(ratio).unwrap();},
+                    Key::Down => {ratio -= 0.1; tx.send(ratio).unwrap();},
                     Key::Char('q') => {
                         stream.stop().unwrap();
                         break;},
