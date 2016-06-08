@@ -9,3 +9,4 @@ extern crate test;
 
 pub mod samplerate;
 pub mod sndfile;
+pub mod ringbuffer;

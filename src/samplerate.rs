@@ -3,6 +3,8 @@
 use libc::{c_int, c_float, c_long, c_double, c_char};
 use std::ffi::CStr;
 use std::ptr;
+use ringbuffer as rb;
+
 
 #[derive(Debug)]
 #[repr(C)]
@@ -67,7 +69,7 @@ extern {
     fn src_process(src_state : *mut SRC_STATE, data : *mut src_data) -> c_int;
     fn src_reset(src_state : *mut SRC_STATE) -> c_int;
     //If we didn't want smooth transition when changing the resampling ratio
-    //fn src_set_ratio(src_state : *mut SRC_STATE, c_double new_ratio) -> c_int;
+    fn src_set_ratio(src_state : *mut SRC_STATE, new_ratio : c_double) -> c_int;
 
     fn src_strerror(error : c_int) -> *const c_char;
 }
@@ -136,7 +138,12 @@ impl<'a> Resampler<'a> {
         self.src_ratio = src_ratio;
     }
 
-    pub fn resample(&mut self, data_in : &[f32], data_out : &mut [f32])  -> Result<u64, &str> {
+    pub fn set_src_ratio_hard(&mut self, src_ratio : f64) {
+        self.src_ratio = src_ratio;
+        unsafe {src_set_ratio(self.src_state, src_ratio)};
+    }
+
+    pub fn resample(&mut self, data_in : &[f32], data_out : &mut [f32])  -> Result<(u64, u64), &str> {
         let mut src_data = src_data {
             data_in : data_in.as_ptr(),
             data_out : data_out.as_mut_ptr(),
@@ -151,7 +158,7 @@ impl<'a> Resampler<'a> {
         let result = unsafe { src_process(self.src_state, &mut src_data as *mut src_data) };
 
         if 0 == result  {
-            return Ok(src_data.output_frames_gen as u64);
+            return Ok((src_data.input_frames_used as u64, src_data.output_frames_gen as u64));
         }
         else {
             let str_error = unsafe { CStr::from_ptr(src_strerror(result)) };
@@ -164,6 +171,98 @@ impl<'a> Drop for Resampler<'a> {
     fn drop(&mut self) {
         unsafe {src_delete(self.src_state)};
     }
+}
+
+/// For several resampling algorithms, libresample yields less samples than requested because of a delay.
+/// SmartResampler uses a ring buffer to output the same number of samples as requested.
+/// It makes it easier to change the resampling ratio in real time. We also aim at making easier at changing
+/// the resampling algorithm, in real time.
+pub struct SmartResampler<'a> {
+    resampler: Resampler<'a>,
+    input_ring : rb::RingBuffer<f32>,
+    output_ring : rb::RingBuffer<f32>,
+    interm_buffer : Vec<f32>,
+    count : u64,
+}
+
+// TODO: we don't output the last half buffer now... maybe use the next_buffer_last flag?
+impl<'a> SmartResampler<'a> {
+    /// `max_buffer_size` must the maximum size an input buffer can be. This is typically
+    /// `nb_channels * frames_per_buffer * max_up_ratio`.
+    pub fn new(converter_type : ConverterType, channels : u32, src_ratio: f64, max_buffer_size: usize) -> SmartResampler<'a> {
+        let resampler = Resampler::new(converter_type, channels, src_ratio);
+
+        let input_buffer  = rb::RingBuffer::new(2 * max_buffer_size);
+        let output_buffer  = rb::RingBuffer::new(2 * max_buffer_size);
+        let interm_buffer = Vec::with_capacity(max_buffer_size);
+
+        SmartResampler {resampler : resampler, input_ring : input_buffer, output_ring : output_buffer,
+              interm_buffer : interm_buffer, count : 0}
+    }
+
+    pub fn resample(&mut self, data_in : &[f32], data_out : &mut [f32])  -> Result<(), &str> {
+        let nb_channels = self.resampler.channels as u64;
+
+
+        //Push new samples to the input ring buffer
+
+        //If first, we push some silence at the beginning, creating a delay
+        //It's due to the sync resampler (and even linear one?) that have a delay
+        if self.count == 0 {
+            self.input_ring.fill(data_in.len() / 2, 0.).unwrap();//We may have to resize the ringbuffer in some cases...
+            //TODO: resize ringbuffer
+        }
+
+        // debug_assert!(self.input_ring.slots_free() <= self.input_ring.capacity());
+        self.input_ring.write(data_in).unwrap();
+
+        //Read the right samples. We need to copy them in another buffer because the ringbuffer wraps around, so
+        //the memory might not been contiguous
+        if self.interm_buffer.len() != data_in.len() {
+            self.interm_buffer.resize(data_in.len(), 0.);
+        }
+        self.input_ring.get(self.interm_buffer.as_mut_slice()).unwrap();
+
+
+        let (frames_used, frames_gen) = try!(self.resampler.resample(self.interm_buffer.as_slice(), data_out));
+        //Advance the input ring buffer by the number of samples used:
+        // This number is often less than the size of the provided input buffer (interm_buffer)
+        // especially if the resampler is a "sync" resampler
+        self.input_ring.skip(frames_used as usize).unwrap();
+
+        //Prepare the output ring buffer
+        if self.count == 0 {
+            self.output_ring.fill(data_out.len() / 2, 0.).unwrap();
+        }
+        let gen_size = frames_gen * nb_channels;
+
+        self.output_ring.write(&data_out[0..gen_size as usize]).unwrap();//Fill the buffer with the gen samples
+        self.output_ring.read(data_out).unwrap();//Get back the right number of samples
+
+        //It should not be the case as we provided more samples in input
+        // if frames_gen * nb_channels < (data_out.len() as u64) {
+        //     panic!("Not enough samples to output: got {}, expected {}", frames_gen * nb_channels, data_out.len());
+        //     //TODO: also delay output by some samples
+        //     //TODO: better. Find out the latency in samples, given buffer sizes
+        // }
+
+        self.count += 1;
+
+        Ok(())
+    }
+
+    pub fn set_src_ratio(&mut self, src_ratio : f64) {
+        self.resampler.src_ratio = src_ratio;
+    }
+
+    pub fn set_src_ratio_hard(&mut self, src_ratio : f64) {
+        self.resampler.set_src_ratio_hard(src_ratio);
+    }
+
+    pub fn next_buffer_last(&mut self) {
+        self.resampler.end_of_input = true;
+    }
+
 }
 
 #[cfg(test)]
@@ -195,11 +294,11 @@ mod tests {
         let mut downsampler = Resampler::new(ConverterType::SincBestQuality, 1, 0.5);
         downsampler.next_buffer_last();
 
-        let gen1 = upsampler.resample(&input_buffer[..], &mut interm_buffer[..]);
-        assert_eq!(gen1.unwrap(), 512);
+        let (_,gen1) = upsampler.resample(&input_buffer[..], &mut interm_buffer[..]).unwrap();
+        assert_eq!(gen1, 512);
 
-        let gen2 = downsampler.resample(&interm_buffer[..], &mut output_buffer[..]);
-        assert_eq!(gen2.unwrap(), 255);
+        let (_,gen2) = downsampler.resample(&interm_buffer[..], &mut output_buffer[..]).unwrap();
+        assert_eq!(gen2, 255);
 
         output_buffer[255] = input_buffer[255];//WHy libsamplerate doesn't write the last sample?
         //because of the delay line of best_sync

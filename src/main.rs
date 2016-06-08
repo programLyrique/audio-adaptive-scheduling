@@ -23,6 +23,7 @@ use std::fs::File;
 
 
 const FRAMES_PER_BUFFER : u32 = 64;
+const UP_RATIO : f64 = 2.;
 
 use time::{PreciseTime, Duration};
 
@@ -70,14 +71,17 @@ fn main() {
 
      //Audio callback and audio callback communication
      let ( tx,  rx) = mpsc::channel();
-     let mut up_ratio = 2.;
+     let mut up_ratio = UP_RATIO;
      let mut chunk_it = 0;
 
      //Resampling apparatus...
-     let mut upsampler = Resampler::new(ConverterType::Linear, nb_channels as u32, up_ratio);
+     let mut nb_samples_interm = nb_channels as usize * FRAMES_PER_BUFFER as usize * up_ratio as usize;
+
+     let mut upsampler = SmartResampler::new(ConverterType::Linear, nb_channels as u32, up_ratio, nb_samples_interm * 10);
      let mut downsampler = Resampler::new(ConverterType::Linear, nb_channels as u32, 1. / up_ratio);
 
-     let mut interm_buffer = vec![0.;FRAMES_PER_BUFFER as usize *up_ratio as usize];
+     let mut interm_buffer = vec![0.;nb_samples_interm];
+     interm_buffer.reserve(nb_channels as usize * FRAMES_PER_BUFFER as usize * std::cmp::max(20, UP_RATIO as usize));
 
      let callback = move |pa::OutputStreamCallbackArgs {buffer, frames, time, ..}| {
          let start = PreciseTime::now();
@@ -85,6 +89,14 @@ fn main() {
          while let Ok(val) = rx.try_recv() {
              up_ratio = val;
          }
+         //New ratio so resize buffer and change resampling ratios
+         nb_samples_interm = (nb_channels as f64 * FRAMES_PER_BUFFER as f64 * up_ratio).ceil() as usize;
+         //println!("New interm buffer size: {}", nb_samples_interm);
+         interm_buffer.resize(nb_samples_interm, 0.);//It shoudn't reallocate memory as we have reserved enough before starting the audio thread
+         upsampler.set_src_ratio(up_ratio);
+         downsampler.set_src_ratio_hard(1. / up_ratio);
+         //The problem with set_src_ratio is that it is going to try to transition smoothly to the
+         // new ratio, not yielding the righ number of samples.
 
          let nb_samples = frames * nb_channels;
 
@@ -93,26 +105,16 @@ fn main() {
           * ||ch1|ch2|ch3||ch1|ch2|ch3||ch1|ch2|ch3||
           */
 
-        //  for frame in buffer.chunks_mut(nb_channels) {
-            //  let val = rng.gen::<f32>() * volume;
-            //  for sample in frame.iter_mut() {
-                //  *sample = val;
-            //  }
-        //  }
-        if frames != nb_frames as usize {//Should never happen as we crate the output audio stream with the number of frames of the input ones
-            panic!("Not equal number of frames in output and input.")
-        }
 
-        if chunk_it  < audiostream.len() - FRAMES_PER_BUFFER  as usize * nb_channels {
-            //We don't play the last chunk as it is smaller than the normal one
-            //The best would be too copy zeroes at the end...
-
+        if chunk_it  < audiostream.len()  {
 
             let input_buffer = &audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())];
+            //chunk_it+ nb_samples = audiostream.len() at the end, normally (TODO: to check)
 
             //upsample
             let gen1 = upsampler.resample(input_buffer, &mut interm_buffer[..]);
-            assert_eq!(gen1.unwrap(), FRAMES_PER_BUFFER as u64 * up_ratio as u64);
+            //assert_eq!(gen1.unwrap().1, (FRAMES_PER_BUFFER as f64 * up_ratio).ceil() as u64);//number of frames, not sample
+            //Will panic at the end...
 
             //Do some processing
             //buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
@@ -123,7 +125,7 @@ fn main() {
 
             //downsample
             let gen2 = downsampler.resample(&interm_buffer[..], &mut buffer[..]);
-            assert_eq!(gen2.unwrap(), FRAMES_PER_BUFFER as u64);
+            assert_eq!(gen2.unwrap().1, FRAMES_PER_BUFFER as u64);
 
             //Send monitoring infos
             let duration = start.to(PreciseTime::now());
@@ -156,56 +158,55 @@ fn main() {
     /*
      * Event interaction with the console
      */
-    let rustbox = match RustBox::init(Default::default()) {
-        Result::Ok(v) => v,
-        Result::Err(e) => panic!("{}", e),
-    };
-
-
-    let nb_channels_str = &format!("Number of samples x number of channels = {}", 6);
-
-    rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
-    rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
-    rustbox.present();
-
-    let mut ratio = 2.;
-    while stream.is_active().unwrap() {
-        rustbox.clear();
-        rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
-        rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
-        rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Ratio : {}", ratio));
-
-        // let cpu_load = stream.cpu_load();
-        // let stream_infos = stream.info();
-        // rustbox.print(1, 5, rustbox::RB_BOLD, Color::White, Color::Black,
-        //     &format!("CPU load {} ; Input latency: {}s ; Output latency: {}", cpu_load, stream_infos.input_latency, stream_infos.output_latency));
-
-        match rustbox.poll_event(false) {
-            Ok(rustbox::Event::KeyEvent(key)) => {
-                match key {
-                    Key::Up => {ratio += 0.1; tx.send(ratio).unwrap();},
-                    Key::Down => {ratio -= 0.1; tx.send(ratio).unwrap();},
-                    Key::Char('q') => {
-                        stream.stop().unwrap();
-                        break;},
-                    _ => {}
-                }
-            },
-            Err(e) => panic!("{}", e.description()),
-            _ => {}
-        };
-
-        rustbox.present();
-    }
-
-    // let mut vol = 5;
+    // let rustbox = match RustBox::init(Default::default()) {
+    //     Result::Ok(v) => v,
+    //     Result::Err(e) => panic!("{}", e),
+    // };
+    //
+    //
+    // let nb_channels_str = &format!("Number of samples x number of channels = {}", nb_channels * nb_frames as usize);
+    //
+    // rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
+    // rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
+    // rustbox.present();
+    //
+    // let mut ratio = UP_RATIO;
     // while stream.is_active().unwrap() {
-    //     pa.sleep(1000);
-    //     vol = (vol+1) % 10;
-    //     println!("At {}s, volume is now: {}", time::precise_time_s(), vol);
-    //     tx.send(vol).unwrap();
+    //     rustbox.clear();
+    //     rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
+    //     rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black, nb_channels_str);
+    //     rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Ratio : {}", ratio));
+    //
+    //     // let cpu_load = stream.cpu_load();
+    //     // let stream_infos = stream.info();
+    //     // rustbox.print(1, 5, rustbox::RB_BOLD, Color::White, Color::Black,
+    //     //     &format!("CPU load {} ; Input latency: {}s ; Output latency: {}", cpu_load, stream_infos.input_latency, stream_infos.output_latency));
+    //
+    //     match rustbox.poll_event(false) {
+    //         Ok(rustbox::Event::KeyEvent(key)) => {
+    //             match key {
+    //                 Key::Up => {ratio += 1.; tx.send(ratio).unwrap();},
+    //                 Key::Down => {ratio -= 1.; tx.send(ratio).unwrap();},
+    //                 Key::Char('q') => {
+    //                     stream.stop().unwrap();
+    //                     break;},
+    //                 _ => {}
+    //             }
+    //         },
+    //         Err(e) => panic!("{}", e.description()),
+    //         _ => {}
+    //     };
+    //
+    //     rustbox.present();
     // }
-    // tx.send(vol).unwrap();
+
+    let mut ratio = 1.;
+    while stream.is_active().unwrap() {
+        pa.sleep(1000);
+        ratio = ((ratio * 10. ) as u32 % 150) as f64 / 10. + 1.;
+        println!("At {}s, resampling ratio is now: {}", time::precise_time_s(), ratio);
+        tx.send(ratio).unwrap();
+    }
 
     println!("End of playback");
 
