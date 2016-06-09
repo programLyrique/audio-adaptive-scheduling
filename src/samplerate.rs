@@ -203,12 +203,13 @@ impl<'a> SmartResampler<'a> {
     pub fn resample(&mut self, data_in : &[f32], data_out : &mut [f32])  -> Result<(), &str> {
         let nb_channels = self.resampler.channels as u64;
 
+        self.count += 1;
 
         //Push new samples to the input ring buffer
 
         //If first, we push some silence at the beginning, creating a delay
         //It's due to the sync resampler (and even linear one?) that have a delay
-        if self.count == 0 {
+        if self.count == 1 {
             self.input_ring.fill(data_in.len() / 2, 0.).unwrap();//We may have to resize the ringbuffer in some cases...
             //TODO: resize ringbuffer
         }
@@ -228,16 +229,20 @@ impl<'a> SmartResampler<'a> {
         //Advance the input ring buffer by the number of samples used:
         // This number is often less than the size of the provided input buffer (interm_buffer)
         // especially if the resampler is a "sync" resampler
-        self.input_ring.skip(frames_used as usize).unwrap();
 
-        //Prepare the output ring buffer
-        if self.count == 0 {
-            self.output_ring.fill(data_out.len() / 2, 0.).unwrap();
-        }
         let gen_size = frames_gen * nb_channels;
+        let used_size = frames_used * nb_channels;
 
-        self.output_ring.write(&data_out[0..gen_size as usize]).unwrap();//Fill the buffer with the gen samples
-        self.output_ring.read(data_out).unwrap();//Get back the right number of samples
+        self.input_ring.skip(used_size as usize).unwrap();
+
+        // //Prepare the output ring buffer
+        // if self.count == 1 {
+        //     self.output_ring.fill(data_out.len() / 2, 0.).unwrap();
+        // }
+        //
+        //
+        // self.output_ring.write(&data_out[0..gen_size as usize]).unwrap();//Fill the buffer with the gen samples
+        // self.output_ring.read(data_out).unwrap();//Get back the right number of samples
 
         //It should not be the case as we provided more samples in input
         // if frames_gen * nb_channels < (data_out.len() as u64) {
@@ -245,9 +250,6 @@ impl<'a> SmartResampler<'a> {
         //     //TODO: also delay output by some samples
         //     //TODO: better. Find out the latency in samples, given buffer sizes
         // }
-
-        self.count += 1;
-
         Ok(())
     }
 
