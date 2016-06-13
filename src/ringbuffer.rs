@@ -221,6 +221,7 @@ mod tests {
                 println!("Stopping: {}", e);
                 break;
             }
+            i += 1
         }
     }
 }

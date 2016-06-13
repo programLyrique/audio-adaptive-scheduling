@@ -270,9 +270,7 @@ impl<'a> SmartResampler<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand;
     use rand::{Rng, SeedableRng, StdRng};
-    use std::f64;
     #[cfg(bench)]
     use test::Bencher;
 
