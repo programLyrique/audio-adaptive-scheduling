@@ -1,8 +1,15 @@
 [package]
-name = "basic_example"
+name = "audio-adaptive-scheduling"
 version = "0.1.0"
 authors = ["Pierre Donat-Bouillud <pierre.donat-bouillud@ircam.fr>"]
 
+[[bin]]
+name = "audio_adaptive"
+path = "src/main.rs"
+
+[[bin]]
+name = "interactive"
+path = "src/interactive.rs"
 
 [lib]
 name = "basic_example"
