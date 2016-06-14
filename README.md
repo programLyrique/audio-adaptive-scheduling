@@ -8,3 +8,9 @@ It aims at experimenting a tradeoff between quality and execution time for audio
 
 - Automatic resampling
 - Substitution of processing nodes by worse quality versions
+
+
+### Non Rust dependencies
+
+- libsamplerate
+- libsndfile
