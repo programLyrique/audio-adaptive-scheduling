@@ -5,5 +5,5 @@ script: ./run-tests.sh
 addons:
   apt:
     packages:
-    - libsamplerate-dev
-    - libsndfile-dev
+    - libsamplerate0-dev
+    - libsndfile1-dev
