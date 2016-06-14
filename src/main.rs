@@ -32,6 +32,10 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
 
+    if args.len() < 1 {
+        panic!("Usage: basic_example Audio_File");
+    }
+
     let mut audioengine = audioengine::AudioEngine::new(&args[1]).unwrap();
 
     /*
@@ -82,7 +86,7 @@ fn main() {
     let mut ratio = 1.;
     while audioengine.stream.is_active().unwrap() {
         thread::sleep_ms(1000);
-        ratio = ((ratio * 10. ) as u32 % 150) as f64 / 10. + 1.;
+        ratio = ((ratio * 10. ) as u32 % 100) as f64 / 10. + 1.;
         println!("At {}s, resampling ratio is now: {}", time::precise_time_s(), ratio);
         audioengine.control_sender.send(ratio).unwrap();
     }

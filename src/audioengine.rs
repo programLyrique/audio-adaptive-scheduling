@@ -31,9 +31,10 @@ lazy_static! {
 
 #[derive(Debug)]
 struct TimeMonitoring {
-    pub current_invocation : f64,//When the audio callback is invoked
-    pub buffer_dac : f64, // when the first sample of the output buffer will be send to the DAC
+    pub current_invocation : f64,//When the audio callback is invoked (in s)
+    pub buffer_dac : f64, // when the first sample of the output buffer will be send to the DAC (in s)
     pub audio_processing : Duration,//duration between beginning of callback and when the audio processing has been finished in the audio callback
+    pub ratio : f64,//Resampling ratio
 }
 
 
@@ -69,10 +70,12 @@ impl<'a> AudioEngine<'a> {
          thread::spawn(move || {
              let mut f = File::create("execution_audio").expect("Impossible to report execution times");
 
-             f.write_all(b"CurrentInvocation\tBufferDac\tAudioProcNS\n").unwrap();
+             f.write_all(b"CurrentInvocation\tBufferDac\tAudioProcNS\tRatio\n").unwrap();
             for monitoring_infos in rx_monit_exec.iter() {
                  let duration : Duration = monitoring_infos.audio_processing;
-                 let seria = format!("{}\t{}\t{}\n", monitoring_infos.current_invocation, monitoring_infos.buffer_dac, duration.num_nanoseconds().unwrap());
+                 let seria = format!("{}\t{}\t{}\t{}\n", monitoring_infos.current_invocation,
+                    monitoring_infos.buffer_dac, duration.num_nanoseconds().unwrap(),
+                    monitoring_infos.ratio);
                  f.write_all(seria.as_bytes()).unwrap();
             }
              println!("End monitoring execution times because {:?}", rx_monit_exec.recv().unwrap_err().description());
@@ -87,8 +90,8 @@ impl<'a> AudioEngine<'a> {
          //Resampling apparatus...
          let mut nb_samples_interm = nb_channels as usize * FRAMES_PER_BUFFER as usize * up_ratio as usize;
 
-         let mut upsampler = SmartResampler::new(ConverterType::SincBestQuality, nb_channels as u32, up_ratio, nb_samples_interm * 20);
-         let mut downsampler = SmartResampler::new(ConverterType::SincBestQuality, nb_channels as u32, 1. / up_ratio, nb_samples_interm * 10);
+         let mut upsampler = SmartResampler::new(ConverterType::Linear, nb_channels as u32, up_ratio, nb_samples_interm * 20);
+         let mut downsampler = SmartResampler::new(ConverterType::Linear, nb_channels as u32, 1. / up_ratio, nb_samples_interm * 10);
 
          let mut interm_buffer = vec![0.;nb_samples_interm];
          interm_buffer.reserve(nb_channels as usize * FRAMES_PER_BUFFER as usize * std::cmp::max(20, UP_RATIO as usize));
@@ -139,7 +142,8 @@ impl<'a> AudioEngine<'a> {
                 tx_monit_exec.send(TimeMonitoring {
                         current_invocation : time.current,
                         buffer_dac : time.buffer_dac,
-                        audio_processing : duration
+                        audio_processing : duration,
+                        ratio : up_ratio,
                     }).unwrap();
 
                 chunk_it += nb_samples;
