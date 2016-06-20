@@ -1,4 +1,4 @@
-extern crate basic_example;
+extern crate audio_adaptive;
 extern crate rustbox;
 extern crate portaudio;
 extern crate rand;
@@ -8,8 +8,8 @@ extern crate lazy_static;
 
 
 use std::env;
-use basic_example::sndfile::*;
-use basic_example::samplerate::*;
+use audio_adaptive::sndfile::*;
+use audio_adaptive::samplerate::*;
 
 use std::sync::mpsc;
 use std::thread;

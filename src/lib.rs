@@ -14,3 +14,4 @@ pub mod samplerate;
 pub mod sndfile;
 pub mod ringbuffer;
 pub mod reverb;
+pub mod effect;

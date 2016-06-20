@@ -7,8 +7,8 @@ use time::{PreciseTime, Duration};
 use std::path::Path;
 use std::thread;
 
-use basic_example::sndfile::*;
-use basic_example::samplerate::*;
+use audio_adaptive::sndfile::*;
+use audio_adaptive::samplerate::*;
 
 use std::io::prelude::*;
 use std::fs::File;

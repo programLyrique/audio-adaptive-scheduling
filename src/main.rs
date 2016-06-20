@@ -1,4 +1,4 @@
-extern crate basic_example;
+extern crate audio_adaptive;
 extern crate rustbox;
 extern crate portaudio;
 extern crate rand;
@@ -8,23 +8,11 @@ extern crate lazy_static;
 
 
 use std::env;
-use basic_example::sndfile::*;
-use basic_example::samplerate::*;
 
-use std::sync::mpsc;
+
 use std::thread;
 
-use std::error::Error;
 
-use rustbox::Key;
-use rustbox::{Color, RustBox};
-
-use portaudio as pa;
-
-use std::io::prelude::*;
-use std::fs::File;
-
-use time::{PreciseTime, Duration};
 
 mod audioengine;
 
