@@ -10,11 +10,11 @@ enum AudioGraphError {
 
 trait AudioEffect {
     //But several channels and several outputs? Later. Now, we rather mix the inputs in the buffer
-    fn process(&mut self, buffer: &mut [f32], samplerate : u32);
+    fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize);
 }
 
 struct AudioGraph<T : AudioEffect> {
-    graph : Graph<T,u32>,
+    graph : Graph<T,u32>,//TODO: put a buffer here
     schedule : Vec<NodeIndex<u32> >,
 }
 
@@ -69,9 +69,11 @@ impl<T : AudioEffect> AudioGraph<T> {
 
 impl<T : AudioEffect> AudioEffect for AudioGraph<T> {
     ///A non adaptive version of the execution of teh audio graph
-    fn process(&mut self, buffer: &mut [f32], samplerate : u32) {
+    fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
-            self.graph.node_weight_mut(*index).unwrap().process(buffer, samplerate);
+            //Get input edges here, and the buffers on this connection
+            self.graph.node_weight_mut(*index).unwrap().process(buffer, samplerate, channels);
+            //Write buffer in the output edges
         }
     }
 }
@@ -83,15 +85,26 @@ enum DspNode {
 }
 
 impl AudioEffect for DspNode {
-    fn process(&mut self, buffer : &mut [f32], samplerate : u32) {
+    fn process(&mut self, buffer : &mut [f32], samplerate : u32, channels : usize) {
         match *self {
             DspNode::Mixer => unimplemented!(),
-            DspNode::Oscillator(ref mut phase, frequency, volume) => unimplemented!()
+            DspNode::Oscillator(ref mut phase, frequency, volume) => {
+                /*
+                 * frame of size 3 with 3 channels. Nb samples is 9
+                 * ||ch1|ch2|ch3||ch1|ch2|ch3||ch1|ch2|ch3||
+                 */
+                for chunk in buffer.chunks_mut(channels) {
+                    for channel in chunk.iter_mut() {
+                        *channel = sine_wave(*phase, volume);
+                        *phase += frequency as f32 / samplerate as f32;
+                    }
+                }
+            }
         }
     }
 }
 
-fn sine_wave(phase : f32) -> f32 {
+fn sine_wave(phase : f32, volume : f32) -> f32 {
     use std::f64::consts::PI;
-    (phase * PI as f32 * 2.0).sin() as f32
+    (phase * PI as f32 * 2.0).sin() as f32 * volume
 }
