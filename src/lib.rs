@@ -9,6 +9,7 @@ extern crate test;
 
 extern crate ncollide;
 extern crate nalgebra as na;
+extern crate petgraph;
 
 pub mod samplerate;
 pub mod sndfile;
