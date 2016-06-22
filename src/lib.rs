@@ -11,6 +11,8 @@ extern crate ncollide;
 extern crate nalgebra as na;
 extern crate petgraph;
 
+extern crate time;
+
 pub mod samplerate;
 pub mod sndfile;
 pub mod ringbuffer;

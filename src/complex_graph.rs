@@ -7,7 +7,7 @@ use audio_adaptive::effect::*;
 
 use portaudio as pa;
 
-
+use std::env;
 use std::thread;
 
 const NUM_SECONDS : u32 = 5;
@@ -15,7 +15,9 @@ const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
 const FRAMES_PER_BUFFER: u32 = 64;
 
-fn run() -> Result<(), pa::Error> {
+///Launch a audio graph with nb_oscillators
+/// On my machine, 1500 - 1600 oscillators (1545...) seem to start entailing miss deadlines
+fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     let pa = try!(pa::PortAudio::new());
 
     let settings = try!(pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER));
@@ -24,15 +26,19 @@ fn run() -> Result<(), pa::Error> {
     let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
     let mut audio_graph = AudioGraph::new(buffer_size);
     let mixer = audio_graph.add_node(DspNode::Mixer);
-    for i in 1..11 {
-        audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.8 ), mixer);
+    for i in 1..nb_oscillators {
+        audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.9 / nb_oscillators as f32 ), mixer);
     }
-    audio_graph.update_schedule().expect("There is a cycle here");
+    audio_graph.update_schedule().expect("Cycle detected");
 
 
-    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
+    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames, time, ..}| {
 
-        audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
+        //time members are in seconds. We need to convert it to microseconds
+        let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
+        assert!(time.buffer_dac- time.current < 1.0);
+        audio_graph.process_adaptive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
+        //audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
 
         pa::Continue
     };
@@ -51,5 +57,10 @@ fn run() -> Result<(), pa::Error> {
 
 
 fn main() {
-    run().unwrap()
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 1 {
+        panic!("Usage: basic_example nb_oscillators");
+    }
+    run(args[1].parse::<u32>().expect("Usage: basic_example nb_oscillators")).unwrap()
 }
