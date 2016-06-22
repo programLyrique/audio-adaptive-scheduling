@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "interactive"
 path = "src/interactive.rs"
 
+[[bin]]
+name = "complex_graph"
+path = "src/complex_graph.rs"
+
 [lib]
 name = "audio_adaptive"
 

@@ -1,5 +1,4 @@
 extern crate audio_adaptive;
-extern crate rustbox;
 extern crate portaudio;
 extern crate rand;
 extern crate time;

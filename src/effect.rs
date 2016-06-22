@@ -3,6 +3,9 @@ use petgraph::{Graph, EdgeDirection};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 
+use std::collections::HashMap;
+use std::hash::{Hash,Hasher};
+
 #[derive(Debug)]
 pub enum AudioGraphError {
     Cycle,
@@ -13,16 +16,17 @@ pub trait AudioEffect {
     fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize);
 }
 
-pub struct AudioGraph<T : AudioEffect> {
+pub struct AudioGraph<T : AudioEffect + Eq> {
     graph : Graph<T,Vec<f32> >,
     schedule : Vec<NodeIndex<u32> >,
     size : usize,//Default size of a connection buffer
+    execution_times : HashMap<T, u64>,//Hashtable to keep mean execution time for every type of node
 }
 
 
-impl<T : AudioEffect> AudioGraph<T> {
+impl<T : AudioEffect + Eq + Hash> AudioGraph<T> {
     pub fn new(size : usize) -> AudioGraph<T> {
-        AudioGraph {graph : Graph::new(), schedule : Vec::new(), size : size}
+        AudioGraph {graph : Graph::new(), schedule : Vec::new(), size : size, execution_times : HashMap::new()}
     }
 
     pub fn add_node(&mut self, node : T) -> NodeIndex {
@@ -81,7 +85,7 @@ impl<T : AudioEffect> AudioGraph<T> {
 
 }
 
-impl<T : AudioEffect> AudioEffect for AudioGraph<T> {
+impl<T : AudioEffect + Eq + Hash> AudioEffect for AudioGraph<T> {
     ///A non adaptive version of the execution of teh audio graph
     fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
@@ -111,11 +115,13 @@ impl<T : AudioEffect> AudioEffect for AudioGraph<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DspNode {
     Oscillator(f32, u32, f32),
     Mixer,
 }
+
+impl Eq for DspNode {}
 
 impl AudioEffect for DspNode {
     fn process(&mut self, buffer : &mut [f32], samplerate : u32, channels : usize) {
@@ -136,6 +142,14 @@ impl AudioEffect for DspNode {
         }
     }
 }
+impl Hash for DspNode {
+    fn hash<H>(&self, state : &mut H) where H: Hasher {
+        state.write_u32 (match *self {
+            DspNode::Mixer => 1,
+            DspNode::Oscillator(_, _, _) => 2
+        })
+    }
+}
 
 fn sine_wave(phase : f32, volume : f32) -> f32 {
     use std::f64::consts::PI;
@@ -146,6 +160,7 @@ fn sine_wave(phase : f32, volume : f32) -> f32 {
 mod tests {
     use super::*;
     use std::f32::EPSILON;
+    use std::hash::{Hash, SipHasher, Hasher};
 
     #[test]
     fn test_audio_graph() {
@@ -164,5 +179,19 @@ mod tests {
             audio_graph.process(buffer.as_mut_slice(), 44100, 2)
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
+    }
+
+    #[test]
+    fn test_dsp_node() {
+        let n1 = DspNode::Oscillator(2., 44100, 0.5);
+        let n2 = DspNode::Oscillator(3., 44100, 0.6);
+
+        let mut s = SipHasher::new();
+        let h1 = n1.hash(&mut s);
+        let h2 = n2.hash(&mut s);
+        s.finish();
+
+        assert_eq!(h1, h2);
+
     }
 }
