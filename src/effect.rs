@@ -3,7 +3,6 @@ use petgraph::{Graph, EdgeDirection};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 
-use std::collections::HashMap;
 use std::hash::{Hash,Hasher};
 
 
@@ -25,11 +24,24 @@ pub trait AudioEffect {
     fn id(&self) -> usize;
 }
 
+pub struct Connection {
+    buffer : Vec<f32>,
+    resample : bool,
+}
+
+impl Connection {
+    fn new(buffer : Vec<f32>) -> Connection {
+        Connection {buffer : buffer , resample : false}
+    }
+}
+
 pub struct AudioGraph<T : Copy + AudioEffect + Eq> {
-    graph : Graph<T,Vec<f32> >,
+    graph : Graph<T,Connection>,
     schedule : Vec< NodeIndex<u32> >,
     size : usize,//Default size of a connection buffer
-    time_nodes : Vec<Stats>,//Hashtable to keep mean execution time for every type of node
+    time_nodes : Vec<Stats>,//To keep mean execution time for every type of node
+    //Why not a HashMap? Too slow! (100-150µs). We rather do our "own" hash table, which perfect
+    //hashing as we know the number of different kinds of nodes (it is nb_effects)
     time_input : Stats, //Mean time to populate one input connection
     time_output : Stats,//Mean time to populate one output connection
 }
@@ -47,13 +59,13 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
     pub fn add_input(&mut self, src : T, dest : NodeIndex) -> NodeIndex {
         let parent = self.graph.add_node(src);
-        self.graph.add_edge(parent, dest, vec![0.;self.size]);
+        self.graph.add_edge(parent, dest, Connection::new(vec![0.;self.size]));
         parent
     }
 
     pub fn add_output(&mut self, src : NodeIndex, dest : T) -> NodeIndex {
         let child = self.graph.add_node(dest);
-        self.graph.add_edge(src, child, vec![0.;self.size]);
+        self.graph.add_edge(src, child, Connection::new(vec![0.;self.size]));
         child
     }
 
@@ -68,10 +80,10 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
     }
 
     pub fn add_connection(&mut self, src: NodeIndex, dest : NodeIndex) -> EdgeIndex {
-        self.graph.add_edge(src, dest, vec![0.;self.size])
+        self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size]))
     }
 
-    pub fn outputs(&self, src : NodeIndex) -> Edges<Vec<f32>, u32> {
+    pub fn outputs(&self, src : NodeIndex) -> Edges<Connection, u32> {
         self.graph.edges_directed(src, EdgeDirection::Outgoing)
     }
 
@@ -79,7 +91,7 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
     }
 
-    pub fn inputs(&self, dest : NodeIndex) -> Edges<Vec<f32>, u32> {
+    pub fn inputs(&self, dest : NodeIndex) -> Edges<Connection, u32> {
         self.graph.edges_directed(dest, EdgeDirection::Incoming)
     }
 
@@ -103,10 +115,10 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         for index in self.schedule.iter() {
             //Get input edges here, and the buffers on this connection, and mix them
             let mut stats = self.time_input;
-            for (_, buf) in self.inputs(*index) {
+            for (_, connection) in self.inputs(*index) {
                 //TODO: for later, case with connections that change of size
                 let input_time = PreciseTime::now();
-                for (s1,s2) in buffer.iter_mut().zip(buf) {
+                for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
                     *s1 += *s2
                 }
                 stats.update_time(input_time);
@@ -134,7 +146,7 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             while let Some(edge) = edges.next_edge(&self.graph) {
                 let output_time = PreciseTime::now();
                 //TODO: for later, case with connections that change of size
-                self.graph.edge_weight_mut(edge).unwrap().copy_from_slice(buffer);
+                self.graph.edge_weight_mut(edge).unwrap().buffer.copy_from_slice(buffer);
                 self.time_output.update_time(output_time);
             }
 
@@ -152,9 +164,9 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<T> {
     fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
             //Get input edges here, and the buffers on this connection, and mix them
-            for (_, buf) in self.inputs(*index) {
+            for (_, connection) in self.inputs(*index) {
                 //TODO: for later, case with connections that change of size
-                for (s1,s2) in buffer.iter_mut().zip(buf) {
+                for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
                     *s1 += *s2
                 }
             }
@@ -171,7 +183,7 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<T> {
             let mut edges = self.outputs_mut(*index);
             while let Some(edge) = edges.next_edge(&self.graph) {
                 //TODO: for later, case with connections that change of size
-                self.graph.edge_weight_mut(edge).unwrap().copy_from_slice(buffer)
+                self.graph.edge_weight_mut(edge).unwrap().buffer.copy_from_slice(buffer)
             }
         }
     }
