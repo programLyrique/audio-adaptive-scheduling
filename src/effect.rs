@@ -5,6 +5,7 @@ use petgraph::algo::toposort;
 
 use std::hash::{Hash,Hasher};
 
+use samplerate::{Resampler, ConverterType};
 
 use time::{PreciseTime, Duration};
 
@@ -24,21 +25,26 @@ pub trait AudioEffect {
     fn id(&self) -> usize;
 }
 
-pub struct Connection {
+pub struct Connection<'a> {
     buffer : Vec<f32>,
     resample : bool,
+    resampler : Resampler<'a>
 }
 
-impl Connection {
-    fn new(buffer : Vec<f32>) -> Connection {
-        Connection {buffer : buffer , resample : false}
+impl<'a> Connection<'a> {
+    fn new(buffer : Vec<f32>, channels : u32) -> Connection<'a>  {
+        Connection {buffer : buffer ,
+                resample : false,
+                resampler : Resampler::new(ConverterType::Linear, channels, 1.0)//We can change the number of channels
+            }
     }
 }
 
-pub struct AudioGraph<T : Copy + AudioEffect + Eq> {
-    graph : Graph<T,Connection>,
+pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
+    graph : Graph<T,Connection<'a> >,
     schedule : Vec< NodeIndex<u32> >,
     size : usize,//Default size of a connection buffer
+    channels : u32,//Number of channels
     time_nodes : Vec<Stats>,//To keep mean execution time for every type of node
     //Why not a HashMap? Too slow! (100-150µs). We rather do our "own" hash table, which perfect
     //hashing as we know the number of different kinds of nodes (it is nb_effects)
@@ -47,10 +53,14 @@ pub struct AudioGraph<T : Copy + AudioEffect + Eq> {
 }
 
 
-impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
-    pub fn new(size : usize) -> AudioGraph<T> {
-        AudioGraph {graph : Graph::new(), schedule : Vec::new(), size : size,
-            time_nodes : vec![Stats::new();2], time_input : Stats::new(), time_output : Stats::new()}
+impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
+    /// Create a new AudioGraph
+    /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
+    /// which is `frames_per_buffer * channels`
+    pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<'a, T> {
+        AudioGraph {graph : Graph::new(), schedule : Vec::new(), size : frames_per_buffer * channels as usize,
+            time_nodes : vec![Stats::new();2], time_input : Stats::new(),
+            time_output : Stats::new(), channels : channels}
     }
 
     pub fn add_node(&mut self, node : T) -> NodeIndex {
@@ -59,13 +69,13 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
     pub fn add_input(&mut self, src : T, dest : NodeIndex) -> NodeIndex {
         let parent = self.graph.add_node(src);
-        self.graph.add_edge(parent, dest, Connection::new(vec![0.;self.size]));
+        self.graph.add_edge(parent, dest, Connection::new(vec![0.;self.size], self.channels));
         parent
     }
 
     pub fn add_output(&mut self, src : NodeIndex, dest : T) -> NodeIndex {
         let child = self.graph.add_node(dest);
-        self.graph.add_edge(src, child, Connection::new(vec![0.;self.size]));
+        self.graph.add_edge(src, child, Connection::new(vec![0.;self.size], self.channels));
         child
     }
 
@@ -80,7 +90,7 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
     }
 
     pub fn add_connection(&mut self, src: NodeIndex, dest : NodeIndex) -> EdgeIndex {
-        self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size]))
+        self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size], self.channels))
     }
 
     pub fn outputs(&self, src : NodeIndex) -> Edges<Connection, u32> {
@@ -159,7 +169,7 @@ impl<T : AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
 }
 
-impl<T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<T> {
+impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
     ///A non adaptive version of the execution of the audio graph
     fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
@@ -281,8 +291,8 @@ mod tests {
 
     #[test]
     fn test_audio_graph() {
-        let mut audio_graph = AudioGraph::new(64);
-        let mut buffer = vec![0.;64];
+        let mut audio_graph = AudioGraph::new(64, 2);
+        let mut buffer = vec![0.;64 * 2];
 
         let mixer = audio_graph.add_node(DspNode::Mixer);
 
@@ -293,7 +303,7 @@ mod tests {
         audio_graph.update_schedule().expect("There is a cycle here");
 
         for _ in 0..10000 {
-            audio_graph.process(buffer.as_mut_slice(), 44100, 2)
+            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 500.)
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }

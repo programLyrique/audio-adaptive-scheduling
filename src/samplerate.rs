@@ -126,6 +126,10 @@ impl<'a> Resampler<'a> {
         }
     }
 
+    pub fn set_channels(&mut self, channels : u32) {
+        self.channels = channels;
+    }
+
     pub fn reset(&mut self) {
         unsafe {src_reset(self.src_state)};
     }
