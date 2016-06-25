@@ -9,6 +9,8 @@ use samplerate::{Resampler, ConverterType};
 
 use time::{PreciseTime, Duration};
 
+use std::cell::{Cell, RefCell};
+
 #[derive(Debug)]
 pub enum AudioGraphError {
     Cycle,
@@ -16,7 +18,7 @@ pub enum AudioGraphError {
 
 pub trait AudioEffect {
     //But several channels and several outputs? Later. Now, we rather mix the inputs in the buffer
-    fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize);
+    fn process(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize);
 
     /// How many differents effects there are
     fn nb_effects() -> usize;
@@ -41,7 +43,7 @@ impl<'a> Connection<'a> {
 }
 
 pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
-    graph : Graph<T,Connection<'a> >,
+    graph : Graph<T,Connection<'a>>,
     schedule : Vec< NodeIndex<u32> >,
     schedule_expected_time : Vec<f64>,//Cumulated expected execution time for every node starting from the end
     //Use to calculate remaining expected time
@@ -52,6 +54,7 @@ pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     //hashing as we know the number of different kinds of nodes (it is nb_effects)
     time_input : Stats, //Mean time to populate one input connection
     time_output : Stats,//Mean time to populate one output connection
+    time_resampler : Stats,//Time to upsample/downsample
 }
 
 enum Quality {
@@ -68,8 +71,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
             schedule_expected_time : Vec::new(),
             size : frames_per_buffer * channels as usize,
-            time_nodes : vec![Stats::new();T::nb_effects()], time_input : Stats::new(),
-            time_output : Stats::new(), channels : channels}
+            time_nodes : vec![Stats::new();T::nb_effects()],
+            time_input : Stats::new(),
+            time_output : Stats::new(),
+            time_resampler : Stats::init(15.),
+            channels : channels}
     }
 
     pub fn add_node(&mut self, node : T) -> NodeIndex {
@@ -102,11 +108,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size], self.channels))
     }
 
-    pub fn outputs(&self, src : NodeIndex) -> Edges<Connection, u32> {
+    pub fn outputs(& self, src : NodeIndex) -> Edges<Connection, u32> {
         self.graph.edges_directed(src, EdgeDirection::Outgoing)
     }
 
-    pub fn nb_outputs(&self, src : NodeIndex) -> u32 {
+    pub fn nb_outputs(& self, src : NodeIndex) -> u32 {
         self.outputs(src).count() as u32
     }
 
@@ -114,7 +120,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
     }
 
-    pub fn inputs(&self, dest : NodeIndex) -> Edges<Connection, u32> {
+    pub fn inputs(& self, dest : NodeIndex) -> Edges<Connection, u32> {
         self.graph.edges_directed(dest, EdgeDirection::Incoming)
     }
 
@@ -122,7 +128,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.neighbors_directed(src, EdgeDirection::Incoming).detach()
     }
 
-    pub fn nb_inputs(&self, dest : NodeIndex) -> u32 {
+    pub fn nb_inputs(& self, dest : NodeIndex) -> u32 {
         self.inputs(dest).count() as u32
     }
 
@@ -146,7 +152,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     // to the last node.
     ///
     /// This should be invoked once at the beginning of every dsp cycle, or if the schedule changes
-    fn update_remaining_times(&mut self) {
+    fn update_remaining_times(& mut self) {
         let len = self.schedule.len();
 
         let mut expected_acc = 0.;
@@ -169,14 +175,14 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// `node` is the index in the schedule of the node that is going to be executed next
     ///
     /// If some resamplers are decided to be used, then
-    fn update_adaptive(&mut self, budget : f64, node : usize) -> Quality {
+    fn update_adaptive(& self, budget : f64, node : usize) -> Quality {
         //Expected remaining time of computation after this node compared to budget?
         if budget >= self.schedule_expected_time[node] {
             //TODO: disable resampling
             //TODO: except if permanent overload
             return Quality::Normal;
         }
-        //Otherwise, select the nodes to degrade, so wheer to insert downsampler and upsampler
+        //Otherwise, select the nodes to degrade, so where to insert downsampler and upsampler
 
         // let expected_time : f64 = self.schedule.iter().skip(node).map(|&node_index| {
         //     //Computation time of the node, but time to mix the input buffers to the input buffer of the node +
@@ -211,15 +217,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 let factor = (resampling_ratio - 1.) / resampling_ratio; // 1/2 here
 
                 //Remaining time of all the remaining nodes in the schedule
-                let expected_remaining_time = self.schedule.iter().skip(i).map(|&node_index| {
-                    self.time_nodes[self.graph.node_weight(node_index).unwrap().id()].mean +
-                    self.time_input.mean +
-                    self.time_output.mean
-                }).fold(0., |acc, v| acc+v);
+                let expected_remaining_time = self.schedule_expected_time[i];
                 //Calculate the overall time of the reamining nodes to execute
                 //It is the expected time already calculated + the remaining time of the other
-                // nodes which will all be degraded
-                let mut degraded_time = expected_time + expected_remaining_time;
+                // nodes which will all be degraded + the time to downsample and then upsample
+                let mut degraded_time = expected_time + expected_remaining_time + 2. * self.time_resampler.mean;
 
                 //We can only degrade nodes which have not been executed yet
                 //Why iter().rev().any()? Because we are more likely to find nodes
@@ -228,9 +230,9 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 //TODO: we should have a more efficient lookup than this linear search
                 while self.schedule[i..len].iter().rev().any(|&no| no == current_node) {
                     //Pick one input (and here the first one)
-                    let input_node_index = self.inputs(current_node).next().unwrap().0;
+                    current_node = self.inputs(current_node).next().unwrap().0;
                     {//For lifetime and borrowing of self.graph
-                        let input_node = self.graph.node_weight(input_node_index).unwrap();
+                        let input_node = self.graph.node_weight(current_node).unwrap();
 
                         /* We supose that the execution time of effects is at most linear in the number
                             of samples in their input buffer.
@@ -241,7 +243,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     }
                     if degraded_time <= budget {
                         //get the incoming edges going this nodes
-                        let mut edges = self.inputs_mut(input_node_index);
+                        let mut edges = self.inputs_mut(current_node);
                         while let Some(edge_index) = edges.next_edge(&self.graph) {
                             //If we were not resampling before
                             let connection = self.graph.edge_weight_mut(edge_index).unwrap();
@@ -275,7 +277,9 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
+
         for (i,index) in self.schedule.iter().enumerate() {
+            self.update_adaptive(budget as f64, i);
             //Get input edges here, and the buffers on this connection, and mix them
             let mut stats = self.time_input;
             for (_, connection) in self.inputs(*index) {
@@ -332,7 +336,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
 impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
     ///A non adaptive version of the execution of the audio graph
-    fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
+    fn process(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
             //Get input edges here, and the buffers on this connection, and mix them
             for (_, connection) in self.inputs(*index) {
@@ -424,6 +428,10 @@ struct Stats {
 impl Stats {
     fn new() -> Stats {
         Stats {mean : 0., var : 0., n : 0}
+    }
+
+    fn init(m : f64) -> Stats {
+        Stats {mean : m, var : 0., n : 1}
     }
     //Better to make it generic on Num types?
     //TODO: rather calculate a moving average
