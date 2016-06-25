@@ -43,6 +43,8 @@ impl<'a> Connection<'a> {
 pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     graph : Graph<T,Connection<'a> >,
     schedule : Vec< NodeIndex<u32> >,
+    schedule_expected_time : Vec<f64>,//Cumulated expected execution time for every node starting from the end
+    //Use to calculate remaining expected time
     size : usize,//Default size of a connection buffer
     channels : u32,//Number of channels
     time_nodes : Vec<Stats>,//To keep mean execution time for every type of node
@@ -52,13 +54,20 @@ pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     time_output : Stats,//Mean time to populate one output connection
 }
 
+enum Quality {
+    Normal,
+    Degraded
+}
+
 
 impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// Create a new AudioGraph
     /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
     /// which is `frames_per_buffer * channels`
     pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<'a, T> {
-        AudioGraph {graph : Graph::new(), schedule : Vec::new(), size : frames_per_buffer * channels as usize,
+        AudioGraph {graph : Graph::new(), schedule : Vec::new(),
+            schedule_expected_time : Vec::new(),
+            size : frames_per_buffer * channels as usize,
             time_nodes : vec![Stats::new();2], time_input : Stats::new(),
             time_output : Stats::new(), channels : channels}
     }
@@ -97,6 +106,10 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.edges_directed(src, EdgeDirection::Outgoing)
     }
 
+    pub fn nb_outputs(&self, src : NodeIndex) -> u32 {
+        self.outputs(src).count() as u32
+    }
+
     pub fn outputs_mut(&self, src : NodeIndex) -> WalkNeighbors<u32> {
         self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
     }
@@ -105,8 +118,18 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.edges_directed(dest, EdgeDirection::Incoming)
     }
 
+    pub fn inputs_mut(&self, src : NodeIndex) -> WalkNeighbors<u32> {
+        self.graph.neighbors_directed(src, EdgeDirection::Incoming).detach()
+    }
+
+    pub fn nb_inputs(&self, dest : NodeIndex) -> u32 {
+        self.inputs(dest).count() as u32
+    }
+
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
         self.schedule = toposort(&self.graph);
+        self.schedule_expected_time.resize(self.schedule.len(), 0.);
+
         //we take this occasion to check if the graph is cyclic
         //For that, we just need to check if the schedule has less elements than the size of the graph
         if self.schedule.len() < self.graph.node_count() {
@@ -117,12 +140,127 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         }
     }
 
+    /// Populate the vec `schedule_expected_time`
+    /// `schedule_expected_time[i]` is the remaining time in the schedule `self.schedule` from node i included
+    // to the last node.
+    ///
+    /// This should be invoked once at the beginning of every dsp cycle, or if the schedule changes
+    fn update_remaining_times(&mut self) {
+        let len = self.schedule.len();
+
+        let mut expected_acc = 0.;
+
+        //Iterating backward from the end
+        for i in (0..len).rev() {
+            let node_index = self.schedule[i];
+            let node = self.graph.node_weight(node_index).unwrap();
+            expected_acc += self.time_nodes[node.id()].mean;
+            self.schedule_expected_time[i] = expected_acc;
+        }
+    }
+
+    ///Update the adaptive scheduling.
+    /// `budget`is the remaining computing budget (in microseconds)
+    /// `node` is the index in the schedule of the node that is going to be executed next
+    ///
+    /// If some resamplers are decided to be used, then
+    fn update_adaptive(&mut self, budget : f64, node : usize) -> Quality {
+        //Calculate the expected remaining time of computation
+
+        // let expected_time : f64 = self.schedule.iter().skip(node).map(|&node_index| {
+        //     //Computation time of the node, but time to mix the input buffers to the input buffer of the node +
+        //     // time to copy to the output buffers
+        //     self.time_nodes[self.graph.node_weight(node_index).unwrap().id()].mean +
+        //     self.time_input.mean +
+        //     self.time_output.mean
+        // }).fold(0., |acc, v| acc+v);
+        let mut expected_time = 0.;
+        let len = self.schedule.len();
+        for i in node..len {
+            let node_index = self.schedule[i];
+            {//For lifetime and borrowing of self.graph
+                let node = self.graph.node_weight(node_index).unwrap();
+                expected_time += self.time_nodes[node.id()].mean +
+                    self.time_input.mean * self.nb_inputs(node_index) as f64 +
+                    self.time_output.mean * self.nb_outputs(node_index) as f64;
+            }
+            //We are likely to have a missed deadline
+            // So we are going to insert resamplers
+            // We can do something if it's not the last node
+            if expected_time > budget && i < len - 1 {
+                //the further in a branch to the output, the better quality we have
+                // So we backtrack from the node we attained, not exploring everything now
+                //Why not from the last node?
+                //Because anyway, we will have to degrade the non explored nodes after the current node,
+                // because we are already missing the deadline
+
+                //TODO: see if we have enough time to explore everything backward
+                let mut current_node = node_index;
+                let resampling_ratio = 2.;//Fixed now...
+                let factor = (resampling_ratio - 1.) / resampling_ratio; // 1/2 here
+
+                //Remaining time of all the remaining nodes in the schedule
+                let expected_remaining_time = self.schedule.iter().skip(i).map(|&node_index| {
+                    self.time_nodes[self.graph.node_weight(node_index).unwrap().id()].mean +
+                    self.time_input.mean +
+                    self.time_output.mean
+                }).fold(0., |acc, v| acc+v);
+                //Calculate the overall time of the reamining nodes to execute
+                //It is the expected time already calculated + the remaining time of the other
+                // nodes which will all be degraded
+                let mut degraded_time = expected_time + expected_remaining_time;
+
+                //We can only degrade nodes which have not been executed yet
+                //Why iter().rev().any()? Because we are more likely to find nodes
+                // to degrade at the end of the branch, near the outputs
+                // Maybe the actual implementation of contains is faster...
+                //TODO: we should have a more efficient lookup than this linear search
+                while self.schedule[i..len].iter().rev().any(|&no| no == current_node) {
+                    //Pick one input (and here the first one)
+                    let input_node_index = self.inputs(current_node).next().unwrap().0;
+                    {//For lifetime and borrowing of self.graph
+                        let input_node = self.graph.node_weight(input_node_index).unwrap();
+
+                        /* We supose that the execution time of effects is at most linear in the number
+                            of samples in their input buffer.
+                            TODO we should measure also the mean execution time for degraded versions
+                            instead of assuming linear decrease
+                        */
+                        degraded_time -= factor *  self.time_nodes[input_node.id()].mean;
+                    }
+                    if degraded_time <= budget {
+                        //get the incoming edges going this nodes
+                        let mut edges = self.inputs_mut(input_node_index);
+                        while let Some(edge_index) = edges.next_edge(&self.graph) {
+                            //If we were not resampling before
+                            let connection = self.graph.edge_weight_mut(edge_index).unwrap();
+                            if !connection.resample {
+                                connection.resample = true;
+                                connection.resampler.reset();
+                                //Change buffer sizes? Only in the children nodes
+
+                            }
+                        }
+                    }
+                }
+                //the last node must resample from the right input...
+                //TODO: from node_index, find the path to the output... and change buffer sizes
+                //Or rather, when buffer do not have the same size, automatically resample?
+
+                break;
+            }
+        }
+        return Quality::Normal;
+    }
+
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)
     pub fn process_adaptive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
         let start = PreciseTime::now();
 
-        for index in self.schedule.iter() {
+        self.update_remaining_times();
+
+        for (i,index) in self.schedule.iter().enumerate() {
             //Get input edges here, and the buffers on this connection, and mix them
             let mut stats = self.time_input;
             for (_, connection) in self.inputs(*index) {
@@ -265,6 +403,7 @@ impl Stats {
         Stats {mean : 0., var : 0., n : 0}
     }
     //Better to make it generic on Num types?
+    //TODO: rather calculate a moving average
     #[inline(always)]
     fn update(&mut self, x : f64) -> f64 {
         self.n += 1;
