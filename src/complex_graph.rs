@@ -23,8 +23,8 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     let settings = try!(pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER));
 
     //Build the audiograph
-    let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
-    let mut audio_graph = AudioGraph::new(buffer_size, CHANNELS as u32);
+    //let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
+    let mut audio_graph = AudioGraph::new(FRAMES_PER_BUFFER as usize, CHANNELS as u32);
     let mixer = audio_graph.add_node(DspNode::Mixer);
     for i in 1..nb_oscillators {
         audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.9 / nb_oscillators as f32 ), mixer);

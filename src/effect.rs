@@ -19,7 +19,7 @@ pub trait AudioEffect {
     fn process(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize);
 
     /// How many differents effects there are
-    fn nb_effects(&self) -> usize;
+    fn nb_effects() -> usize;
 
     ///Id effect: should be in [|0, nb_effects - 1|]
     fn id(&self) -> usize;
@@ -68,7 +68,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
             schedule_expected_time : Vec::new(),
             size : frames_per_buffer * channels as usize,
-            time_nodes : vec![Stats::new();2], time_input : Stats::new(),
+            time_nodes : vec![Stats::new();T::nb_effects()], time_input : Stats::new(),
             time_output : Stats::new(), channels : channels}
     }
 
@@ -140,6 +140,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         }
     }
 
+
     /// Populate the vec `schedule_expected_time`
     /// `schedule_expected_time[i]` is the remaining time in the schedule `self.schedule` from node i included
     // to the last node.
@@ -154,7 +155,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         for i in (0..len).rev() {
             let node_index = self.schedule[i];
             let node = self.graph.node_weight(node_index).unwrap();
-            expected_acc += self.time_nodes[node.id()].mean;
+            //Time to copy/mix the input, to to do the actual computations, and to copy
+            //into the output buffers
+            expected_acc += self.time_nodes[node.id()].mean +
+                self.time_input.mean * self.nb_inputs(node_index) as f64 +
+                self.time_output.mean * self.nb_outputs(node_index) as f64;
             self.schedule_expected_time[i] = expected_acc;
         }
     }
@@ -165,7 +170,13 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     ///
     /// If some resamplers are decided to be used, then
     fn update_adaptive(&mut self, budget : f64, node : usize) -> Quality {
-        //Calculate the expected remaining time of computation
+        //Expected remaining time of computation after this node compared to budget?
+        if budget >= self.schedule_expected_time[node] {
+            //TODO: disable resampling
+            //TODO: except if permanent overload
+            return Quality::Normal;
+        }
+        //Otherwise, select the nodes to degrade, so wheer to insert downsampler and upsampler
 
         // let expected_time : f64 = self.schedule.iter().skip(node).map(|&node_index| {
         //     //Computation time of the node, but time to mix the input buffers to the input buffer of the node +
@@ -336,7 +347,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
         }
     }
 
-    fn nb_effects(&self) -> usize { 1}
+    fn nb_effects() -> usize { 1}
     fn id(&self) -> usize {0}
 }
 
@@ -367,7 +378,7 @@ impl AudioEffect for DspNode {
         }
     }
 
-    fn nb_effects(&self) -> usize {2}
+    fn nb_effects() -> usize {2}
 
     fn id(&self) -> usize {
         match *self {
