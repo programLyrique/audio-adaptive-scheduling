@@ -267,9 +267,13 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)
     pub fn process_adaptive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
+        let mut budget = rel_deadline as i64;
+
         let start = PreciseTime::now();
 
-        self.update_remaining_times();
+        self.update_remaining_times();//5-6 microseconds here
+
+        budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
         for (i,index) in self.schedule.iter().enumerate() {
             //Get input edges here, and the buffers on this connection, and mix them
@@ -280,7 +284,10 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
                     *s1 += *s2
                 }
-                stats.update_time(input_time);
+                let time_now = PreciseTime::now();
+                let duration = input_time.to(time_now).num_microseconds().unwrap();
+                stats.update(duration as f64);
+                budget -= duration;
             }
             self.time_input = stats;
 
@@ -289,7 +296,10 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 let node_time = PreciseTime::now();
 
                 node.process(buffer, samplerate, channels);
-                self.time_nodes[node.id()].update_time(node_time);
+                let time_now = PreciseTime::now();
+                let duration = node_time.to(time_now).num_microseconds().unwrap();
+                self.time_nodes[node.id()].update(duration as f64);
+                budget -= duration;
             }
 
             //Write buffer in the output edges
@@ -306,12 +316,14 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 let output_time = PreciseTime::now();
                 //TODO: for later, case with connections that change of size
                 self.graph.edge_weight_mut(edge).unwrap().buffer.copy_from_slice(buffer);
-                self.time_output.update_time(output_time);
+                let time_now = PreciseTime::now();
+                let duration = output_time.to(time_now).num_microseconds().unwrap();
+                self.time_output.update(duration as f64);
+                budget -= duration;
             }
 
-            let late = start.to(PreciseTime::now()).num_microseconds().unwrap() - rel_deadline as i64;
-            if  late > 0 {
-                println!("Deadline missed with {} microseconds", late);
+            if  budget < 0 {
+                println!("Deadline missed with {} microseconds", -budget);
             }
         }
     }
