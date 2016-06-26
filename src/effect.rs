@@ -7,9 +7,11 @@ use std::hash::{Hash,Hasher};
 
 use samplerate::{Resampler, ConverterType};
 
-use time::{PreciseTime, Duration};
+use time::{PreciseTime};
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell};
+
+use std::fmt;
 
 #[derive(Debug)]
 pub enum AudioGraphError {
@@ -44,6 +46,14 @@ impl<'a> Connection<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TimeMonitor {
+    pub quality : Quality,
+    pub budget : i64,
+    pub expected_remaining_time : u64,
+    pub deadline : u64,
+}
+
 pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     graph : Graph<T,Connection<'a>>,
     sink : Connection<'a>,
@@ -60,11 +70,21 @@ pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     time_resampler : Stats,//Time to upsample/downsample
 }
 
-enum Quality {
+#[derive(Copy, Clone, Debug)]
+pub enum Quality {
     Normal,
     Degraded
 }
 
+impl fmt::Display for Quality {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let name = match *self {
+            Quality::Normal => "Normal",
+            Quality::Degraded => "Degraded"
+        };
+        write!(f, "{}", name)
+    }
+}
 
 impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// Create a new AudioGraph
@@ -72,15 +92,16 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// which is `frames_per_buffer * channels`
     pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<'a, T> {
         let size = frames_per_buffer * channels as usize;
+
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
             sink : Connection::new(vec![0.;size], channels),
             schedule_expected_time : Vec::new(),
             size : size,
+            channels : channels,
             time_nodes : vec![Stats::new();T::nb_effects()],
             time_input : Stats::new(),
             time_output : Stats::new(),
-            time_resampler : Stats::init(15.),
-            channels : channels}
+            time_resampler : Stats::init(15.)}
     }
 
     pub fn add_node(&mut self, node : T) -> NodeIndex {
@@ -433,7 +454,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     }
 
     ///Same as process_adaptive but uses a less computationally costly strategy to find the nodes to degrade
-    pub fn process_adaptive2(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
+    pub fn process_adaptive2(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
@@ -442,26 +463,26 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         let start = PreciseTime::now();
 
         self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
-
-        budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
+        let mut expected_remaining_time = self.schedule_expected_time[0];
 
         let mut quality = Quality::Normal;
 
-        for (i,index) in self.schedule.iter().enumerate() {
+        budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
+        for (i,index) in self.schedule.iter().enumerate() {
+            let start_time = PreciseTime::now();
             //We won't perform another analysis on quality once we are in the degraded mode
-            let time_update = PreciseTime::now();
-            match quality {
+            match quality {//300 nodes, 100µs?!
                 Quality::Normal =>
                 quality = if budget - self.schedule_expected_time[i] as i64 >= 0 {
                     Quality::Normal
                 } else {
-                    println!("Degrading");
+                    expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
                     Quality::Degraded
                 },
                 Quality::Degraded => ()
             };
-            budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();//300 nodes, 100µs?!
+            // budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();
             //println!("{} microseconds", rel_deadline as i64 - budget);
 
             //Duplication, but not possible to put it in a method, as rust will complain about
@@ -478,7 +499,6 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         let time_now = PreciseTime::now();
                         let duration = input_time.to(time_now).num_microseconds().unwrap();
                         stats.update(duration as f64);
-                        budget -= duration;
                     }
                     self.time_input = stats;
 
@@ -490,7 +510,6 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         let time_now = PreciseTime::now();
                         let duration = node_time.to(time_now).num_microseconds().unwrap();
                         self.time_nodes[node.id()].update(duration as f64);
-                        budget -= duration;
                     }
 
                     //Write buffer in the output edges
@@ -504,12 +523,9 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         let time_now = PreciseTime::now();
                         let duration = output_time.to(time_now).num_microseconds().unwrap();
                         self.time_output.update(duration as f64);
-                        budget -= duration;
                     }
                 },
                 Quality::Degraded => {
-                    let start_time = PreciseTime::now();
-
                     //Incoming edges
                     let mut edges = self.inputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
@@ -548,32 +564,31 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         connection.resample.set(true);
                         //To indicate that we don't need to resample this connection for the next node
                     };
-                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
+
                 }
             }
-
-            //If the quality has been degraded, in this version, we only upsample at the end, after the last node
-            match quality {
-                Quality::Degraded => {
-                    let start_time = PreciseTime::now();
-                    if !self.sink.resampled {
-                        self.sink.resampler.reset();
-                        self.sink.resampler.set_src_ratio_hard(2.0);
-                        self.sink.resampled = true;
-                    }
-
-                    self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
-                    buffer.copy_from_slice(&self.sink.buffer);
-                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
-                },
-                Quality::Normal => (),
-            }
-
-
-            if  budget < 0 {
-                //println!("Deadline missed with {} microseconds", -budget);
-            }
+            budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
         }
+        //If the quality has been degraded, in this version, we only upsample at the end, after the last node
+        match quality {
+            Quality::Degraded => {
+                let start_time = PreciseTime::now();
+                if !self.sink.resampled {
+                    self.sink.resampler.reset();
+                    self.sink.resampler.set_src_ratio_hard(2.0);
+                    self.sink.resampled = true;
+                }
+
+                self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
+                buffer.copy_from_slice(&self.sink.buffer);
+                budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
+            },
+            Quality::Normal => (),
+        }
+
+        TimeMonitor {quality : quality, budget : budget,
+                    deadline : rel_deadline as u64,
+                    expected_remaining_time : expected_remaining_time as u64}
     }
 
 
@@ -667,7 +682,7 @@ fn sine_wave(phase : f32, volume : f32) -> f32 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Stats {
+pub struct Stats {
     mean : f64,
     var : f64,//We may use it later, but we don't compute it so far
     n : u64,
@@ -689,7 +704,7 @@ impl Stats {
     fn update(&mut self, x : f64) -> f64 {
         self.n += 1;
         let delta = x - self.mean;
-        self.mean = delta / self.n as f64;
+        self.mean += delta / self.n as f64;
         self.mean
     }
 
@@ -746,7 +761,10 @@ mod tests {
         audio_graph.update_schedule().expect("Cycle detected");
 
         for _ in 0..1000 {
-            audio_graph.process_adaptive2(buffer.as_mut_slice(), 44100, 2, 3000.)
+            let times = audio_graph.process_adaptive2(buffer.as_mut_slice(), 44100, 2, 3000.);
+            if times.budget < 0 {
+                println!("Missed deadline!");
+            }
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }
