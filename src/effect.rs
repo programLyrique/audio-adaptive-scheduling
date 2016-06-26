@@ -46,6 +46,7 @@ impl<'a> Connection<'a> {
 
 pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
     graph : Graph<T,Connection<'a>>,
+    sink : Connection<'a>,
     schedule : Vec< NodeIndex<u32> >,
     schedule_expected_time : Vec<f64>,//Cumulated expected execution time for every node starting from the end
     //Use to calculate remaining expected time
@@ -70,9 +71,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
     /// which is `frames_per_buffer * channels`
     pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<'a, T> {
+        let size = frames_per_buffer * channels as usize;
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
+            sink : Connection::new(vec![0.;size], channels),
             schedule_expected_time : Vec::new(),
-            size : frames_per_buffer * channels as usize,
+            size : size,
             time_nodes : vec![Stats::new();T::nb_effects()],
             time_input : Stats::new(),
             time_output : Stats::new(),
@@ -290,7 +293,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     pub fn process_adaptive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
         let mut budget = rel_deadline as i64;
 
-        let soundcard_size = samplerate as usize * channels;
+        let soundcard_size = buffer.len();
 
         let start = PreciseTime::now();
 
@@ -346,12 +349,151 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
                     //Write buffer in the output edges
 
-                    // for (_,buf) in self.outputs(*index) {
-                    //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
-                    //     //     *s1 = *s2
-                    //     // }
-                    //     buf.as_mut_slice().copy_from_slice(buffer);
-                    // }
+                    let mut edges = self.outputs_mut(*index);
+                    while let Some(edge) = edges.next_edge(&self.graph) {
+                        let output_time = PreciseTime::now();
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        connection.buffer.copy_from_slice(buffer);
+                        connection.resampled = false;
+                        let time_now = PreciseTime::now();
+                        let duration = output_time.to(time_now).num_microseconds().unwrap();
+                        self.time_output.update(duration as f64);
+                        budget -= duration;
+                    }
+                },
+                Quality::Degraded => {
+                    let start_time = PreciseTime::now();
+
+                    for (_, connection) in self.inputs(*index) {
+                        //debug_assert_eq!(connection.buffer.len(), buffer.len());
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                            *s1 += *s2
+                        }
+                    }
+
+                    {
+                        let node = self.graph.node_weight_mut(*index).unwrap();
+
+                        let end = if resample {soundcard_size / 2} else {soundcard_size};
+                        node.process(&mut buffer[0..end], samplerate, channels);
+                    }
+
+                    //Write buffer in the output edges
+
+
+                    let mut edges = self.outputs_mut(*index);
+                    while let Some(edge) = edges.next_edge(&self.graph) {
+
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+
+                        if connection.resample.get() && !resample {//It's the beginning of a degrading chain
+                        debug_assert_eq!(connection.buffer.len(), buffer.len());
+                        println!("Starting degrading");
+                            resample = true;
+                            if connection.resampled {
+                                connection.resampled = true;
+                                connection.resampler.reset();
+                            }
+
+                            //downsample
+                            connection.resampler.set_src_ratio_hard(0.5);
+                            connection.buffer.truncate(soundcard_size/ 2);
+                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            connection.resample.set(false);
+                        }
+                        else if !connection.resample.get() && resample {//The end of the chain
+                            debug_assert_eq!(connection.buffer.len(), buffer.len()/2);
+                            println!("Ending degrading");
+                            resample = false;
+                            if connection.resampled {
+                                connection.resampled = true;
+                                connection.resampler.reset();
+                            }
+                            //upsample
+                            connection.resampler.set_src_ratio_hard(2.);
+                            connection.buffer.resize(soundcard_size, 0.);
+                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
+                            connection.resample.set(false);
+                        }
+                        else {//Buffers have same size
+                            debug_assert_eq!(connection.buffer.len(), buffer.len());
+                            connection.resampled = false;
+                            connection.buffer.copy_from_slice(buffer);
+                        }
+
+                    }
+
+                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
+                }
+            }
+
+
+            if  budget < 0 {
+                //println!("Deadline missed with {} microseconds", -budget);
+            }
+        }
+    }
+
+    ///Same as process_adaptive but uses a less computationally costly strategy to find the nodes to degrade
+    pub fn process_adaptive2(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
+        let mut budget = rel_deadline as i64;
+
+        let soundcard_size = buffer.len();
+
+        let start = PreciseTime::now();
+
+        self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
+
+        budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
+
+        let mut quality = Quality::Normal;
+
+        let mut resample = false;
+
+        for (i,index) in self.schedule.iter().enumerate() {
+
+            //We won't perform another analysis on quality once we are in the degraded mode
+            let time_update = PreciseTime::now();
+            match quality {
+                Quality::Normal =>
+                quality = if budget - self.schedule_expected_time[i] as i64 >= 0 {
+                    Quality::Normal
+                } else {Quality::Degraded},
+                Quality::Degraded => ()
+            };
+            budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();//300 nodes, 100µs?!
+            //println!("{} microseconds", rel_deadline as i64 - budget);
+
+            //Duplication, but not possible to put it in a method, as rust will complain about
+            // self borrowed as immutable and mutabel as the same time (as we need to modify some fields of self)
+            match quality {
+                Quality::Normal => {
+                    let mut stats = self.time_input;
+                    //Get input edges here, and the buffers on this connection, and mix them
+                    for (_, connection) in self.inputs(*index) {
+                        let input_time = PreciseTime::now();
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                            *s1 += *s2
+                        }
+                        let time_now = PreciseTime::now();
+                        let duration = input_time.to(time_now).num_microseconds().unwrap();
+                        stats.update(duration as f64);
+                        budget -= duration;
+                    }
+                    self.time_input = stats;
+
+                    {
+                        let node = self.graph.node_weight_mut(*index).unwrap();
+                        let node_time = PreciseTime::now();
+
+                        node.process(buffer, samplerate, channels);
+                        let time_now = PreciseTime::now();
+                        let duration = node_time.to(time_now).num_microseconds().unwrap();
+                        self.time_nodes[node.id()].update(duration as f64);
+                        budget -= duration;
+                    }
+
+                    //Write buffer in the output edges
 
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
@@ -369,7 +511,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     let start_time = PreciseTime::now();
 
                     for (_, connection) in self.inputs(*index) {
-                        debug_assert_eq!(connection.buffer.len(), buffer.len());
+                        //debug_assert_eq!(connection.buffer.len(), buffer.len());
                         for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
                             *s1 += *s2
                         }
@@ -378,52 +520,46 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     {
                         let node = self.graph.node_weight_mut(*index).unwrap();
 
-                        node.process(buffer, samplerate, channels);
+                        let end = if resample {soundcard_size / 2} else {soundcard_size};
+                        node.process(&mut buffer[0..end], samplerate, channels);
                     }
-
-                    //Write buffer in the output edges
-
-                    // for (_,buf) in self.outputs(*index) {
-                    //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
-                    //     //     *s1 = *s2
-                    //     // }
-                    //     buf.as_mut_slice().copy_from_slice(buffer);
-                    // }
 
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
 
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        debug_assert_eq!(connection.buffer.len(), buffer.len());
 
                         if connection.resample.get() && !resample {//It's the beginning of a degrading chain
+                        debug_assert_eq!(connection.buffer.len(), buffer.len());
                         println!("Starting degrading");
                             resample = true;
-                            if connection.resampled {
+                            if !connection.resampled {
                                 connection.resampled = true;
                                 connection.resampler.reset();
                             }
 
                             //downsample
                             connection.resampler.set_src_ratio_hard(0.5);
-                            connection.buffer.truncate(buffer.len()/ 2);
+                            connection.buffer.truncate(soundcard_size/ 2);
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
                             connection.resample.set(false);
                         }
                         else if !connection.resample.get() && resample {//The end of the chain
+                            debug_assert_eq!(connection.buffer.len(), buffer.len()/2);
                             println!("Ending degrading");
                             resample = false;
-                            if connection.resampled {
+                            if !connection.resampled {
                                 connection.resampled = true;
                                 connection.resampler.reset();
                             }
                             //upsample
                             connection.resampler.set_src_ratio_hard(2.);
-                            connection.buffer.resize(buffer.len() * 2, 0.);
+                            connection.buffer.resize(soundcard_size, 0.);
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
                             connection.resample.set(false);
                         }
                         else {//Buffers have same size
+                            debug_assert_eq!(connection.buffer.len(), buffer.len());
                             connection.resampled = false;
                             connection.buffer.copy_from_slice(buffer);
                         }
@@ -434,12 +570,30 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 }
             }
 
+            //If the quality has been degraded, in this version, we only upsample at the end, after the last node
+            match quality {
+                Quality::Degraded => {
+                    resample = false;
+                    if !self.sink.resampled {
+                        self.sink.resampler.reset();
+                        self.sink.resampler.set_src_ratio_hard(2.0);
+                        self.sink.resampled = true;
+                    }
+
+                    self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
+                    buffer.copy_from_slice(&self.sink.buffer);
+
+                },
+                Quality::Normal => (),
+            }
+
 
             if  budget < 0 {
-                println!("Deadline missed with {} microseconds", -budget);
+                //println!("Deadline missed with {} microseconds", -budget);
             }
         }
     }
+
 
 }
 
@@ -603,11 +757,12 @@ mod tests {
 
     #[test]
     fn test_chain() {
-        let mut audio_graph = AudioGraph::new(64, 2);
-        let mut buffer = vec![0.;64 * 2];
+        let nb_frames = 128;
+        let mut audio_graph = AudioGraph::new(nb_frames, 2);
+        let mut buffer = vec![0.;nb_frames * 2];
 
         let mixer = audio_graph.add_node(DspNode::Mixer);
-        let nb_modulators = 3000;
+        let nb_modulators = 300;
         let mut prev_mod = mixer;
         for i in 1..nb_modulators {
             prev_mod = audio_graph.add_input(DspNode::Modulator(i as f32, 350 + i*50, 1. ), prev_mod);
@@ -616,7 +771,7 @@ mod tests {
         audio_graph.update_schedule().expect("Cycle detected");
 
         for _ in 0..1000 {
-            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 500.)
+            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 3000.)
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }

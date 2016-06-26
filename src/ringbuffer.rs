@@ -205,6 +205,7 @@ mod tests {
     const BUFFER_SIZE : usize = 10000;
 
     #[test]
+    #[ignore]
     fn ringbuffer_test() {
         let mut ring_buffer = RingBuffer::new(BUFFER_SIZE);
         let mut buffer = Vec::with_capacity(BUFFER_SIZE);
