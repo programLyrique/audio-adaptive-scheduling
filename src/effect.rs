@@ -379,8 +379,6 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     }
 
                     //Write buffer in the output edges
-
-
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
 
@@ -390,7 +388,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         debug_assert_eq!(connection.buffer.len(), buffer.len());
                         println!("Starting degrading");
                             resample = true;
-                            if connection.resampled {
+                            if connection.resampled {//Should take about 11 microseconds
                                 connection.resampled = true;
                                 connection.resampler.reset();
                             }
@@ -439,6 +437,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
+        let end = soundcard_size / 2;
 
         let start = PreciseTime::now();
 
@@ -448,8 +447,6 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
         let mut quality = Quality::Normal;
 
-        let mut resample = false;
-
         for (i,index) in self.schedule.iter().enumerate() {
 
             //We won't perform another analysis on quality once we are in the degraded mode
@@ -458,7 +455,10 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 Quality::Normal =>
                 quality = if budget - self.schedule_expected_time[i] as i64 >= 0 {
                     Quality::Normal
-                } else {Quality::Degraded},
+                } else {
+                    println!("Degrading");
+                    Quality::Degraded
+                },
                 Quality::Degraded => ()
             };
             budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();//300 nodes, 100µs?!
@@ -510,62 +510,44 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 Quality::Degraded => {
                     let start_time = PreciseTime::now();
 
-                    for (_, connection) in self.inputs(*index) {
-                        //debug_assert_eq!(connection.buffer.len(), buffer.len());
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
-                            *s1 += *s2
+                    //Incoming edges
+                    let mut edges = self.inputs_mut(*index);
+                    while let Some(edge) = edges.next_edge(&self.graph) {
+
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        if connection.resample.get() {//Means that resampling has already been done previously on the chain
+                            for (s1,s2) in buffer[0..end].iter_mut().zip(&connection.buffer[0..end]) {
+                                *s1 += *s2
+                            };
+                            connection.resample.set(false);//Set to false for the next cycle
+                        }
+                        else {
+                            if !connection.resampled {
+                                connection.resampler.reset();
+                                connection.resampler.set_src_ratio_hard(0.5);
+                                connection.resampled = true;
+                            }
+                            for (s1,s2) in buffer[0..end].iter_mut().zip(&connection.buffer[0..end]) {
+                                *s1 += *s2
+                            }
                         }
                     }
 
+                    //Node processing
                     {
                         let node = self.graph.node_weight_mut(*index).unwrap();
-
-                        let end = if resample {soundcard_size / 2} else {soundcard_size};
                         node.process(&mut buffer[0..end], samplerate, channels);
                     }
 
+                    //Outcoming edges
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
 
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-
-                        if connection.resample.get() && !resample {//It's the beginning of a degrading chain
-                        debug_assert_eq!(connection.buffer.len(), buffer.len());
-                        println!("Starting degrading");
-                            resample = true;
-                            if !connection.resampled {
-                                connection.resampled = true;
-                                connection.resampler.reset();
-                            }
-
-                            //downsample
-                            connection.resampler.set_src_ratio_hard(0.5);
-                            connection.buffer.truncate(soundcard_size/ 2);
-                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
-                            connection.resample.set(false);
-                        }
-                        else if !connection.resample.get() && resample {//The end of the chain
-                            debug_assert_eq!(connection.buffer.len(), buffer.len()/2);
-                            println!("Ending degrading");
-                            resample = false;
-                            if !connection.resampled {
-                                connection.resampled = true;
-                                connection.resampler.reset();
-                            }
-                            //upsample
-                            connection.resampler.set_src_ratio_hard(2.);
-                            connection.buffer.resize(soundcard_size, 0.);
-                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
-                            connection.resample.set(false);
-                        }
-                        else {//Buffers have same size
-                            debug_assert_eq!(connection.buffer.len(), buffer.len());
-                            connection.resampled = false;
-                            connection.buffer.copy_from_slice(buffer);
-                        }
-
-                    }
-
+                        connection.buffer[0..end].copy_from_slice(&buffer[0..end]);
+                        connection.resample.set(true);
+                        //To indicate that we don't need to resample this connection for the next node
+                    };
                     budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 }
             }
@@ -573,7 +555,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
             //If the quality has been degraded, in this version, we only upsample at the end, after the last node
             match quality {
                 Quality::Degraded => {
-                    resample = false;
+                    let start_time = PreciseTime::now();
                     if !self.sink.resampled {
                         self.sink.resampler.reset();
                         self.sink.resampler.set_src_ratio_hard(2.0);
@@ -582,7 +564,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
                     self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
                     buffer.copy_from_slice(&self.sink.buffer);
-
+                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 },
                 Quality::Normal => (),
             }
@@ -610,13 +592,6 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
             }
             self.graph.node_weight_mut(*index).unwrap().process(buffer, samplerate, channels);
             //Write buffer in the output edges
-
-            // for (_,buf) in self.outputs(*index) {
-            //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
-            //     //     *s1 = *s2
-            //     // }
-            //     buf.as_mut_slice().copy_from_slice(buffer);
-            // }
 
             let mut edges = self.outputs_mut(*index);
             while let Some(edge) = edges.next_edge(&self.graph) {
@@ -771,7 +746,7 @@ mod tests {
         audio_graph.update_schedule().expect("Cycle detected");
 
         for _ in 0..1000 {
-            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 3000.)
+            audio_graph.process_adaptive2(buffer.as_mut_slice(), 44100, 2, 3000.)
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }

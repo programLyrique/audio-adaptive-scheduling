@@ -33,7 +33,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     for i in 1..nb_oscillators {
         prev_mod = audio_graph.add_input(DspNode::Modulator(i as f32, 350 + i*50, 1.0 ), prev_mod);
     }
-    audio_graph.add_input(DspNode::Oscillator(0., 135, 0.7 ), prev_mod);
+    audio_graph.add_input(DspNode::Oscillator(0., 135, 0.5 ), prev_mod);
     audio_graph.update_schedule().expect("Cycle detected");
 
 
@@ -42,7 +42,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
         //time members are in seconds. We need to convert it to microseconds
         let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
         assert!(time.buffer_dac- time.current < 1.0);
-        audio_graph.process_adaptive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
+        audio_graph.process_adaptive2(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
         //audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
 
         pa::Continue
