@@ -8,23 +8,14 @@ extern crate lazy_static;
 
 
 use std::env;
-use audio_adaptive::sndfile::*;
-use audio_adaptive::samplerate::*;
 
-use std::sync::mpsc;
-use std::thread;
 
 use std::error::Error;
 
 use rustbox::Key;
 use rustbox::{Color, RustBox};
 
-use portaudio as pa;
 
-use std::io::prelude::*;
-use std::fs::File;
-
-use time::{PreciseTime, Duration};
 
 mod audioengine;
 

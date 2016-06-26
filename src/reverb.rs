@@ -1,6 +1,7 @@
 //! Physical reverb using raycasting
 //! The goal is to have here an anytime algorithm
 
+#![allow(unused_imports)]
 use na::{Identity, Point3, Vector3};
 use ncollide::shape::Cuboid;
 use ncollide::query::{Ray, RayCast};
