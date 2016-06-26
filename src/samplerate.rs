@@ -277,6 +277,23 @@ mod tests {
     use rand::{Rng, SeedableRng, StdRng};
     #[cfg(bench)]
     use test::Bencher;
+    use time::{PreciseTime, Duration};
+
+    #[test]
+    pub fn test_reset() {
+        let mut upsampler = Resampler::new(ConverterType::SincBestQuality, 1, 2.);
+        let mut duration = Duration::zero();
+
+        let nb_iter = 1000;
+        for _ in 0..nb_iter {
+            let start = PreciseTime::now();
+            upsampler.set_src_ratio_hard(5.);
+            upsampler.reset();
+            duration = duration + start.to(PreciseTime::now());
+        }
+        duration = duration / nb_iter;
+        println!("Mean duration is: {} microseconds", duration.num_microseconds().unwrap());
+    }
 
     #[test]
     pub fn identity_test() {
