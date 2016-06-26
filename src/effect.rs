@@ -29,14 +29,16 @@ pub trait AudioEffect {
 
 pub struct Connection<'a> {
     buffer : Vec<f32>,
-    resample : bool,
+    resample : Cell<bool>,//Has to be resampled
+    resampled : bool,//Was resampled during previous cycle
     resampler : Resampler<'a>
 }
 
 impl<'a> Connection<'a> {
     fn new(buffer : Vec<f32>, channels : u32) -> Connection<'a>  {
         Connection {buffer : buffer ,
-                resample : false,
+                resample : Cell::new(false),
+                resampled : false,
                 resampler : Resampler::new(ConverterType::Linear, channels, 1.0)//We can change the number of channels
             }
     }
@@ -196,7 +198,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         for i in node..len {
             let node_index = self.schedule[i];
             {//For lifetime and borrowing of self.graph
-                let node = self.graph.node_weight(node_index).unwrap();
+                let node = self.graph.node_weight(node_index).expect("Current node in schedule not found!");
                 expected_time += self.time_nodes[node.id()].mean +
                     self.time_input.mean * self.nb_inputs(node_index) as f64 +
                     self.time_output.mean * self.nb_outputs(node_index) as f64;
@@ -228,11 +230,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 // to degrade at the end of the branch, near the outputs
                 // Maybe the actual implementation of contains is faster...
                 //TODO: we should have a more efficient lookup than this linear search
-                while self.schedule[i..len].iter().rev().any(|&no| no == current_node) {
+                while self.schedule[i+1..len].iter().rev().any(|&no| no == current_node) {
                     //Pick one input (and here the first one)
-                    current_node = self.inputs(current_node).next().unwrap().0;
+                    current_node = self.inputs(current_node).next().expect("No input node found").0;
                     {//For lifetime and borrowing of self.graph
-                        let input_node = self.graph.node_weight(current_node).unwrap();
+                        let input_node = self.graph.node_weight(current_node).expect("Next remaining node not found");
 
                         /* We supose that the execution time of effects is at most linear in the number
                             of samples in their input buffer.
@@ -242,89 +244,196 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                         degraded_time -= factor *  self.time_nodes[input_node.id()].mean;
                     }
                     if degraded_time <= budget {
-                        //get the incoming edges going this nodes
+                        //get the incoming edges going to this nodes
                         let mut edges = self.inputs_mut(current_node);
                         while let Some(edge_index) = edges.next_edge(&self.graph) {
                             //If we were not resampling before
-                            let connection = self.graph.edge_weight_mut(edge_index).unwrap();
-                            if !connection.resample {
-                                connection.resample = true;
-                                connection.resampler.reset();
+                            let connection = self.graph.edge_weight(edge_index).expect("Connection not found!");
+                            if !connection.resample.get() {
+                                connection.resample.set(true);
+                                //connection.resampler.reset();
                                 //Change buffer sizes? Only in the children nodes
 
                             }
                         }
+                        return Quality::Degraded;
                     }
                 }
+                //Even degrading is not enough but we decide to degrade nevertheless
+                //get the incoming edges going to this nodes
+                let mut edges = self.inputs_mut(current_node);
+                while let Some(edge_index) = edges.next_edge(&self.graph) {
+                    //If we were not resampling before
+                    let connection = self.graph.edge_weight(edge_index).expect("Connection not found!");
+                    if !connection.resample.get() {
+                        connection.resample.set(true);
+                        //connection.resampler.reset();
+                        //Change buffer sizes? Only in the children nodes
+
+                    }
+                }
+                return Quality::Degraded;
+
                 //the last node must resample from the right input...
                 //TODO: from node_index, find the path to the output... and change buffer sizes
                 //Or rather, when buffer do not have the same size, automatically resample?
 
-                break;
+
             }
         }
         return Quality::Normal;
     }
+
 
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)
     pub fn process_adaptive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
         let mut budget = rel_deadline as i64;
 
+        let soundcard_size = samplerate as usize * channels;
+
         let start = PreciseTime::now();
 
-        self.update_remaining_times();//5-6 microseconds here
+        self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
+        let mut quality = Quality::Normal;
+
+        let mut resample = false;
 
         for (i,index) in self.schedule.iter().enumerate() {
-            self.update_adaptive(budget as f64, i);
-            //Get input edges here, and the buffers on this connection, and mix them
-            let mut stats = self.time_input;
-            for (_, connection) in self.inputs(*index) {
-                //TODO: for later, case with connections that change of size
-                let input_time = PreciseTime::now();
-                for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
-                    *s1 += *s2
+
+            //We won't perform another analysis on quality once we are in the degraded mode
+            let time_update = PreciseTime::now();
+            match quality {
+                Quality::Normal =>  {
+                    quality = self.update_adaptive(budget as f64, i);
+                },
+                Quality::Degraded => ()
+            };
+            budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();//300 nodes, 100µs?!
+            //println!("{} microseconds", rel_deadline as i64 - budget);
+
+            //Duplication, but not possible to put it in a method, as rust will complain about
+            // self borrowed as immutable and mutabel as the same time (as we need to modify some fields of self)
+            match quality {
+                Quality::Normal => {
+                    let mut stats = self.time_input;
+                    //Get input edges here, and the buffers on this connection, and mix them
+                    for (_, connection) in self.inputs(*index) {
+                        let input_time = PreciseTime::now();
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                            *s1 += *s2
+                        }
+                        let time_now = PreciseTime::now();
+                        let duration = input_time.to(time_now).num_microseconds().unwrap();
+                        stats.update(duration as f64);
+                        budget -= duration;
+                    }
+                    self.time_input = stats;
+
+                    {
+                        let node = self.graph.node_weight_mut(*index).unwrap();
+                        let node_time = PreciseTime::now();
+
+                        node.process(buffer, samplerate, channels);
+                        let time_now = PreciseTime::now();
+                        let duration = node_time.to(time_now).num_microseconds().unwrap();
+                        self.time_nodes[node.id()].update(duration as f64);
+                        budget -= duration;
+                    }
+
+                    //Write buffer in the output edges
+
+                    // for (_,buf) in self.outputs(*index) {
+                    //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
+                    //     //     *s1 = *s2
+                    //     // }
+                    //     buf.as_mut_slice().copy_from_slice(buffer);
+                    // }
+
+                    let mut edges = self.outputs_mut(*index);
+                    while let Some(edge) = edges.next_edge(&self.graph) {
+                        let output_time = PreciseTime::now();
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        connection.buffer.copy_from_slice(buffer);
+                        connection.resampled = false;
+                        let time_now = PreciseTime::now();
+                        let duration = output_time.to(time_now).num_microseconds().unwrap();
+                        self.time_output.update(duration as f64);
+                        budget -= duration;
+                    }
+                },
+                Quality::Degraded => {
+                    let start_time = PreciseTime::now();
+
+                    for (_, connection) in self.inputs(*index) {
+                        debug_assert_eq!(connection.buffer.len(), buffer.len());
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                            *s1 += *s2
+                        }
+                    }
+
+                    {
+                        let node = self.graph.node_weight_mut(*index).unwrap();
+
+                        node.process(buffer, samplerate, channels);
+                    }
+
+                    //Write buffer in the output edges
+
+                    // for (_,buf) in self.outputs(*index) {
+                    //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
+                    //     //     *s1 = *s2
+                    //     // }
+                    //     buf.as_mut_slice().copy_from_slice(buffer);
+                    // }
+
+                    let mut edges = self.outputs_mut(*index);
+                    while let Some(edge) = edges.next_edge(&self.graph) {
+
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        debug_assert_eq!(connection.buffer.len(), buffer.len());
+
+                        if connection.resample.get() && !resample {//It's the beginning of a degrading chain
+                        println!("Starting degrading");
+                            resample = true;
+                            if connection.resampled {
+                                connection.resampled = true;
+                                connection.resampler.reset();
+                            }
+
+                            //downsample
+                            connection.resampler.set_src_ratio_hard(0.5);
+                            connection.buffer.truncate(buffer.len()/ 2);
+                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            connection.resample.set(false);
+                        }
+                        else if !connection.resample.get() && resample {//The end of the chain
+                            println!("Ending degrading");
+                            resample = false;
+                            if connection.resampled {
+                                connection.resampled = true;
+                                connection.resampler.reset();
+                            }
+                            //upsample
+                            connection.resampler.set_src_ratio_hard(2.);
+                            connection.buffer.resize(buffer.len() * 2, 0.);
+                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
+                            connection.resample.set(false);
+                        }
+                        else {//Buffers have same size
+                            connection.resampled = false;
+                            connection.buffer.copy_from_slice(buffer);
+                        }
+
+                    }
+
+                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 }
-                let time_now = PreciseTime::now();
-                let duration = input_time.to(time_now).num_microseconds().unwrap();
-                stats.update(duration as f64);
-                budget -= duration;
-            }
-            self.time_input = stats;
-
-            {
-                let node = self.graph.node_weight_mut(*index).unwrap();
-                let node_time = PreciseTime::now();
-
-                node.process(buffer, samplerate, channels);
-                let time_now = PreciseTime::now();
-                let duration = node_time.to(time_now).num_microseconds().unwrap();
-                self.time_nodes[node.id()].update(duration as f64);
-                budget -= duration;
             }
 
-            //Write buffer in the output edges
-
-            // for (_,buf) in self.outputs(*index) {
-            //     // for (s1,s2) in buf.iter_mut().zip(buffer) {
-            //     //     *s1 = *s2
-            //     // }
-            //     buf.as_mut_slice().copy_from_slice(buffer);
-            // }
-
-            let mut edges = self.outputs_mut(*index);
-            while let Some(edge) = edges.next_edge(&self.graph) {
-                let output_time = PreciseTime::now();
-                //TODO: for later, case with connections that change of size
-                self.graph.edge_weight_mut(edge).unwrap().buffer.copy_from_slice(buffer);
-                let time_now = PreciseTime::now();
-                let duration = output_time.to(time_now).num_microseconds().unwrap();
-                self.time_output.update(duration as f64);
-                budget -= duration;
-            }
 
             if  budget < 0 {
                 println!("Deadline missed with {} microseconds", -budget);
@@ -370,6 +479,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DspNode {
     Oscillator(f32, u32, f32),
+    Modulator(f32, u32, f32),
     Mixer,
 }
 
@@ -379,6 +489,14 @@ impl AudioEffect for DspNode {
     fn process(&mut self, buffer : &mut [f32], samplerate : u32, channels : usize) {
         match *self {
             DspNode::Mixer => (),
+            DspNode::Modulator(ref mut phase, frequency, volume) => {
+                for chunk in buffer.chunks_mut(channels) {
+                    for channel in chunk.iter_mut() {
+                        *channel *= sine_wave(*phase, volume);
+                    }
+                    *phase += frequency as f32 / samplerate as f32;
+                }
+            }
             DspNode::Oscillator(ref mut phase, frequency, volume) => {
                 /*
                  * frame of size 3 with 3 channels. Nb samples is 9
@@ -394,12 +512,13 @@ impl AudioEffect for DspNode {
         }
     }
 
-    fn nb_effects() -> usize {2}
+    fn nb_effects() -> usize {3}
 
     fn id(&self) -> usize {
         match *self {
             DspNode::Mixer => 0,
-            DspNode::Oscillator(_,_,_) => 1
+            DspNode::Oscillator(_,_,_) => 1,
+            DspNode::Modulator(_,_,_) => 2,
         }
     }
 }
@@ -407,7 +526,8 @@ impl Hash for DspNode {
     fn hash<H>(&self, state : &mut H) where H: Hasher {
         state.write_u32 (match *self {
             DspNode::Mixer => 1,
-            DspNode::Oscillator(_, _, _) => 2
+            DspNode::Oscillator(_, _, _) => 2,
+            DspNode::Modulator(_, _, _) => 3
         })
     }
 }
@@ -425,6 +545,7 @@ struct Stats {
 }
 
 /// Compute an online mean: mean_{n+1} = f(mean_n, x)
+/// TODO: make it also possible to use an exponential moving average
 impl Stats {
     fn new() -> Stats {
         Stats {mean : 0., var : 0., n : 0}
@@ -466,13 +587,35 @@ mod tests {
 
         let mixer = audio_graph.add_node(DspNode::Mixer);
 
-        for i in 1..11 {
-            audio_graph.add_input(DspNode::Oscillator(i as f32, 44100 / i, 0.9 / i as f32), mixer);
+        let nb_oscillators = 300;
+
+        for i in 1..nb_oscillators {
+            audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.9 / nb_oscillators as f32), mixer);
         }
 
         audio_graph.update_schedule().expect("There is a cycle here");
 
         for _ in 0..10000 {
+            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 500.)
+        };
+        assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
+    }
+
+    #[test]
+    fn test_chain() {
+        let mut audio_graph = AudioGraph::new(64, 2);
+        let mut buffer = vec![0.;64 * 2];
+
+        let mixer = audio_graph.add_node(DspNode::Mixer);
+        let nb_modulators = 3000;
+        let mut prev_mod = mixer;
+        for i in 1..nb_modulators {
+            prev_mod = audio_graph.add_input(DspNode::Modulator(i as f32, 350 + i*50, 1. ), prev_mod);
+        }
+        audio_graph.add_input(DspNode::Oscillator(0., 135, 0.7 ), prev_mod);
+        audio_graph.update_schedule().expect("Cycle detected");
+
+        for _ in 0..1000 {
             audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 500.)
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
