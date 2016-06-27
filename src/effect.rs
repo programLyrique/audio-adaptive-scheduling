@@ -79,8 +79,8 @@ pub enum Quality {
 impl fmt::Display for Quality {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let name = match *self {
-            Quality::Normal => "Normal",
-            Quality::Degraded => "Degraded"
+            Quality::Normal => 1,
+            Quality::Degraded => 0
         };
         write!(f, "{}", name)
     }

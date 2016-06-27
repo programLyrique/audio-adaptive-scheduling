@@ -48,7 +48,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
     thread::spawn(move || {
 
-        let mut f = File::create(format!("complex_graph_{}.csv",time::now().rfc3339())).expect("Impossible to report execution times");
+        let mut f = File::create(format!("complex_graph_{}_{}.csv",time::now().rfc3339(), nb_oscillators)).expect("Impossible to report execution times");
 
         f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
