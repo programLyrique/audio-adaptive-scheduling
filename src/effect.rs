@@ -52,6 +52,7 @@ pub struct TimeMonitor {
     pub budget : i64,
     pub expected_remaining_time : u64,
     pub deadline : u64,
+    pub nb_degraded : u64, //Number of degraded effects
 }
 
 pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
@@ -464,6 +465,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
         self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
         let mut expected_remaining_time = self.schedule_expected_time[0];
+        let mut first_degraded_node : Option<u64> = None;
 
         let mut quality = Quality::Normal;
 
@@ -478,6 +480,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     Quality::Normal
                 } else {
                     expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
+                    first_degraded_node = Some(i as u64);
                     Quality::Degraded
                 },
                 Quality::Degraded => ()
@@ -588,7 +591,9 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
         TimeMonitor {quality : quality, budget : budget,
                     deadline : rel_deadline as u64,
-                    expected_remaining_time : expected_remaining_time as u64}
+                    expected_remaining_time : expected_remaining_time as u64,
+                    nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
+                }
     }
 
 
