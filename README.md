@@ -14,3 +14,15 @@ It aims at experimenting a tradeoff between quality and execution time for audio
 
 - libsamplerate
 - libsndfile
+
+## Running
+
+### Complex audio graph benchmarks
+
+`cargo run  --release --bin complex_graph nb_nodes`
+
+The results are saved in a file `complex_graph_{date}_{nb_nodes}.csv` with the following columns:
+
+| Quality | Budget | ExpectRemainingTime | Deadline | NbNodes |
+| ------- | ------ | ------------------- | -------- | --------|
+|         | remaining time after the graph has been executed | Expected remaining time at the beginning, or when the graph starts to be degraded |  |  | |
