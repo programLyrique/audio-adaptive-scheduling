@@ -455,7 +455,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     }
 
     ///Same as process_adaptive but uses a less computationally costly strategy to find the nodes to degrade
-    pub fn process_adaptive2(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
+    pub fn process_adaptive_exhaustive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
@@ -766,7 +766,7 @@ mod tests {
         audio_graph.update_schedule().expect("Cycle detected");
 
         for _ in 0..1000 {
-            let times = audio_graph.process_adaptive2(buffer.as_mut_slice(), 44100, 2, 3000.);
+            let times = audio_graph.process_adaptive_exhaustive(buffer.as_mut_slice(), 44100, 2, 3000.);
             if times.budget < 0 {
                 println!("Missed deadline!");
             }

@@ -125,7 +125,7 @@ impl<'a> AudioEngine<'a> {
                 //chunk_it+ nb_samples = audiostream.len() at the end, normally (TODO: to check)
 
                 //upsample
-                let gen1 = upsampler.resample(input_buffer, &mut interm_buffer[..]).unwrap();
+                upsampler.resample(input_buffer, &mut interm_buffer[..]).unwrap();
 
                 //Do some processing
                 //buffer.clone_from_slice(&audiostream[chunk_it..std::cmp::min(chunk_it+ nb_samples, audiostream.len())]);
@@ -135,7 +135,7 @@ impl<'a> AudioEngine<'a> {
                 //
 
                 //downsample
-                let gen2 = downsampler.resample(&interm_buffer[..], &mut buffer[..]).unwrap();
+                downsampler.resample(&interm_buffer[..], &mut buffer[..]).unwrap();
 
                 //Send monitoring infos
                 let duration = start.to(PreciseTime::now());
