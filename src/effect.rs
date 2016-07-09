@@ -312,7 +312,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)
-    pub fn process_adaptive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) {
+    pub fn process_adaptive_progressive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
@@ -320,6 +320,9 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         let start = PreciseTime::now();
 
         self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
+
+        let mut expected_remaining_time = self.schedule_expected_time[0];
+        let mut first_degraded_node : Option<u64> = None;
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
@@ -334,6 +337,11 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
             match quality {
                 Quality::Normal =>  {
                     quality = self.update_adaptive(budget as f64, i);
+                    match quality  {
+                        Quality::Degraded => {expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
+                        first_degraded_node = Some(i as u64);},
+                        _ => ()                        
+                    }
                 },
                 Quality::Degraded => ()
             };
@@ -447,11 +455,13 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 }
             }
 
-
-            if  budget < 0 {
-                //println!("Deadline missed with {} microseconds", -budget);
-            }
         }
+
+        TimeMonitor {quality : quality, budget : budget,
+                    deadline : rel_deadline as u64,
+                    expected_remaining_time : expected_remaining_time as u64,
+                    nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
+                }
     }
 
     ///Same as process_adaptive but uses a less computationally costly strategy to find the nodes to degrade
@@ -745,13 +755,16 @@ mod tests {
         audio_graph.update_schedule().expect("There is a cycle here");
 
         for _ in 0..10000 {
-            audio_graph.process_adaptive(buffer.as_mut_slice(), 44100, 2, 500.)
+            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 500.);
+            if times.budget < 0 {
+                println!("Missed deadline!");
+            }
         };
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }
 
     #[test]
-    fn test_chain() {
+    fn test_chain_total() {
         let nb_frames = 128;
         let mut audio_graph = AudioGraph::new(nb_frames, 2);
         let mut buffer = vec![0.;nb_frames * 2];
@@ -767,6 +780,30 @@ mod tests {
 
         for _ in 0..1000 {
             let times = audio_graph.process_adaptive_exhaustive(buffer.as_mut_slice(), 44100, 2, 3000.);
+            if times.budget < 0 {
+                println!("Missed deadline!");
+            }
+        };
+        assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
+    }
+
+    #[test]
+    fn test_chain_progressive() {
+        let nb_frames = 128;
+        let mut audio_graph = AudioGraph::new(nb_frames, 2);
+        let mut buffer = vec![0.;nb_frames * 2];
+
+        let mixer = audio_graph.add_node(DspNode::Mixer);
+        let nb_modulators = 300;
+        let mut prev_mod = mixer;
+        for i in 1..nb_modulators {
+            prev_mod = audio_graph.add_input(DspNode::Modulator(i as f32, 350 + i*50, 1. ), prev_mod);
+        }
+        audio_graph.add_input(DspNode::Oscillator(0., 135, 0.7 ), prev_mod);
+        audio_graph.update_schedule().expect("Cycle detected");
+
+        for _ in 0..1000 {
+            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 3000.);
             if times.budget < 0 {
                 println!("Missed deadline!");
             }
