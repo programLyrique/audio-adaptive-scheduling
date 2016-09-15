@@ -38,14 +38,14 @@ struct TimeMonitoring {
 }
 
 
-pub struct AudioEngine<'a> {
-    pub stream : pa::stream::Stream<'a, pa::stream::NonBlocking, pa::stream::Output<f32>>,
+pub struct AudioEngine{
+    pub stream : pa::stream::Stream<pa::stream::NonBlocking, pa::stream::Output<f32>>,
     pub control_sender : mpsc::Sender<f64>,
 }
 
 
-impl<'a> AudioEngine<'a> {
-    pub fn new<T : AsRef<Path>+'a>(path: T) -> Result<AudioEngine<'a>, pa::Error> {
+impl AudioEngine {
+    pub fn new<T : AsRef<Path> >(path: T) -> Result<AudioEngine, pa::Error> {
 
         /*
          * Load samples
@@ -171,7 +171,7 @@ impl<'a> AudioEngine<'a> {
     }
 }
 
-impl<'a> Drop for AudioEngine<'a> {
+impl Drop for AudioEngine {
     fn drop(&mut self) {
         use std::error::Error;
         if self.stream.is_active() == Ok(true) {
