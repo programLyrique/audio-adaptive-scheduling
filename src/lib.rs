@@ -7,8 +7,8 @@ extern crate rand;
 #[cfg(test)]
 extern crate test;
 
-extern crate ncollide;
-extern crate nalgebra as na;
+//extern crate ncollide;
+//extern crate nalgebra as na;
 extern crate petgraph;
 
 extern crate time;
@@ -16,5 +16,5 @@ extern crate time;
 pub mod samplerate;
 pub mod sndfile;
 pub mod ringbuffer;
-pub mod reverb;
+//pub mod reverb;
 pub mod effect;
