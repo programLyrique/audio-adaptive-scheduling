@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 extern crate libc;
 
-#[cfg(test)]
+//#[cfg(test)]
 extern crate rand;
 #[cfg(bench)]
 #[cfg(test)]
@@ -18,3 +18,4 @@ pub mod sndfile;
 pub mod ringbuffer;
 //pub mod reverb;
 pub mod effect;
+pub mod experiments;

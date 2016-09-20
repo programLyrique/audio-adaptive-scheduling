@@ -5,6 +5,8 @@ extern crate time;
 
 use audio_adaptive::effect::*;
 
+use audio_adaptive::experiments;
+
 use portaudio as pa;
 
 use std::sync::mpsc;
