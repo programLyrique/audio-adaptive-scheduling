@@ -340,7 +340,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                     match quality  {
                         Quality::Degraded => {expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
                         first_degraded_node = Some(i as u64);},
-                        _ => ()                        
+                        _ => ()
                     }
                 },
                 Quality::Degraded => ()
@@ -639,6 +639,8 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
 pub enum DspNode {
     Oscillator(f32, u32, f32),
     Modulator(f32, u32, f32),
+    //The first arg is used to compute the delays the IIR filter requires
+    LowPass([f32;4], f32,f32),
     Mixer,
 }
 
@@ -655,7 +657,7 @@ impl AudioEffect for DspNode {
                     }
                     *phase += frequency as f32 / samplerate as f32;
                 }
-            }
+            },
             DspNode::Oscillator(ref mut phase, frequency, volume) => {
                 /*
                  * frame of size 3 with 3 channels. Nb samples is 9
@@ -667,17 +669,51 @@ impl AudioEffect for DspNode {
                     }
                     *phase += frequency as f32 / samplerate as f32;
                 }
+            },
+            DspNode::LowPass(ref mut prev_values, cutoff, quality) => {
+                let mut x_n = prev_values[0];//n
+                let mut x_nM = prev_values[1];// n - 1
+                let mut y_nM = prev_values[2];// y - 1
+                let mut y_nMM = prev_values[3];// y - 2
+                // Or n + 1, n, y, and y - 1...
+
+                use std::f64::consts::PI;
+                let w = 2. * PI as f32  * cutoff / 44100.;//Make it possible to change the sampling rate frequency
+                let d = 1. / quality;
+                let beta = ( (1. - (d/2.) * w.sin()) / ( 1. + (d/2.)* w.sin())) / 2.;
+                let gamma = (0.5 + beta) * w.cos();
+
+                let a0 = (0.5 + beta - gamma) / 2.;
+                let a1 = 0.5 + beta - gamma;
+                let a2 = a0;
+                let b1 = -2. * gamma;
+                let b2 = 2. * beta;
+
+                for chunk in buffer.chunks_mut(channels) {
+                    for channel in chunk.iter_mut() {
+                        let cur_channel = *channel;
+                        *channel = a0 * *channel + a1 * x_n + a2 * x_nM - b1 * y_nM - b2 * y_nMM;
+
+                        //Update delays
+                        x_nM = x_n;
+                        x_n = cur_channel;
+                        y_nMM = y_nM;
+                        y_nM = *channel;
+                    }
+
+                }
             }
         }
     }
 
-    fn nb_effects() -> usize {3}
+    fn nb_effects() -> usize {4}
 
     fn id(&self) -> usize {
         match *self {
             DspNode::Mixer => 0,
             DspNode::Oscillator(_,_,_) => 1,
             DspNode::Modulator(_,_,_) => 2,
+            DspNode::LowPass(_,_,_) => 3,
         }
     }
 }
@@ -686,7 +722,8 @@ impl Hash for DspNode {
         state.write_u32 (match *self {
             DspNode::Mixer => 1,
             DspNode::Oscillator(_, _, _) => 2,
-            DspNode::Modulator(_, _, _) => 3
+            DspNode::Modulator(_, _, _) => 3,
+            DspNode::LowPass(_,_,_) => 4,
         })
     }
 }

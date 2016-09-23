@@ -1,13 +1,17 @@
 //! To generate random acyclic directed graphs
 //! with random effects and test the adaptive scheduling algorithm on it
 
-use petgraph::{Graph, EdgeDirection};
-use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use rand::{Rng,SeedableRng, StdRng};
+use std::hash::Hash;
 
-pub trait GraphGenerator {
-    //Rather generate audio effects...
-    fn generate(&mut self) -> Graph<bool, u32>;
+use effect::*;
+
+pub trait GraphGenerator<T : Copy + AudioEffect + Eq> {
+    //Generate several audio nodes
+    //Give a function that generates an audio node as argument, maybe.
+    // Or a vector of possible nodes?
+    // Depending on the topology of the graph?
+    fn generate(&mut self, node : &Fn() -> T) -> AudioGraph<T>;
 }
 
 
@@ -19,7 +23,7 @@ pub struct RandomGenerator {
 impl RandomGenerator {
     pub fn new(size : usize) -> RandomGenerator {
         let seed : &[_] = &[1, 21, 37, 4];
-        let mut rng : StdRng = SeedableRng::from_seed(seed);
+        let rng : StdRng = SeedableRng::from_seed(seed);
         RandomGenerator {
             rng : rng,
             adjacency_matrix : vec![Vec::with_capacity(size); size]
@@ -37,13 +41,13 @@ impl RandomGenerator {
     }
 }
 
-impl GraphGenerator for RandomGenerator {
-    fn generate(&mut self) -> Graph<bool, u32> {
+impl<T : Copy + AudioEffect + Hash + Eq> GraphGenerator<T> for RandomGenerator {
+    fn generate(&mut self, node : &Fn() -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
         //Generate graphfrom that
-        let mut graph = Graph::new();
+        let mut graph = AudioGraph::new(64, 1);
 
         let size = self.adjacency_matrix.len();
 
@@ -51,12 +55,14 @@ impl GraphGenerator for RandomGenerator {
         // (should be sequential and from 0 or 1 anyway)
         let mut indexes = Vec::with_capacity(size);
         for _ in 0..size {
-            indexes.push(graph.add_node(true));
+            indexes.push(graph.add_node(node()));
         };
 
         for (i,row) in self.adjacency_matrix.iter().enumerate() {
             for (j,node) in row.iter().enumerate() {
-                graph.add_edge(indexes[i], indexes[j], 0);
+                if *node {
+                    graph.add_connection(indexes[i], indexes[j]);
+                };
             };
         };
 
@@ -65,16 +71,17 @@ impl GraphGenerator for RandomGenerator {
 }
 
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use effect::*;
 
     #[test]
     fn test_graph_gen() {
         let size = 10;
         let mut randGen = RandomGenerator::new(size);
-        randGen.generate();
+        randGen.generate(& || DspNode::Modulator(5., 500, 1.0));
 
         //Check if it is low triangular indeed
         assert!(randGen.adjacency_matrix.iter().enumerate().all(|(i,row)| row.len() == i + 1))
