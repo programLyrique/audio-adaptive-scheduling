@@ -2,6 +2,7 @@
 use petgraph::{Graph, EdgeDirection};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
+use petgraph::dot::{Dot, Config};
 
 use std::hash::{Hash,Hasher};
 
@@ -29,6 +30,7 @@ pub trait AudioEffect {
     fn id(&self) -> usize;
 }
 
+
 pub struct Connection<'a> {
     buffer : Vec<f32>,
     resample : Cell<bool>,//Has to be resampled
@@ -46,6 +48,12 @@ impl<'a> Connection<'a> {
     }
 }
 
+impl<'a> fmt::Display for Connection<'a> {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "edge")
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TimeMonitor {
     pub quality : Quality,
@@ -55,7 +63,7 @@ pub struct TimeMonitor {
     pub nb_degraded : u64, //Number of degraded effects
 }
 
-pub struct AudioGraph<'a, T : Copy + AudioEffect + Eq> {
+pub struct AudioGraph<'a, T : Copy + AudioEffect + fmt::Display + Eq> {
     graph : Graph<T,Connection<'a>>,
     sink : Connection<'a>,
     schedule : Vec< NodeIndex<u32> >,
@@ -87,7 +95,15 @@ impl fmt::Display for Quality {
     }
 }
 
-impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
+impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for AudioGraph<'a, T> {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        let config = vec![Config::EdgeNoLabel];
+        let dot_fmt = Dot::with_config(&self.graph, &config);
+        dot_fmt.fmt(f)
+    }
+}
+
+impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     /// Create a new AudioGraph
     /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
     /// which is `frames_per_buffer * channels`
@@ -609,7 +625,7 @@ impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
 }
 
-impl<'a, T : AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
+impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
     ///A non adaptive version of the execution of the audio graph
     fn process(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
@@ -725,6 +741,12 @@ impl Hash for DspNode {
             DspNode::Modulator(_, _, _) => 3,
             DspNode::LowPass(_,_,_) => 4,
         })
+    }
+}
+
+impl fmt::Display for DspNode {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.id())
     }
 }
 
