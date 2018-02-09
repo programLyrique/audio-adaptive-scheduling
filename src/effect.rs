@@ -1,8 +1,10 @@
 //! Define an audio graph, an effect and so on
-use petgraph::{Graph, EdgeDirection};
+use petgraph::{Graph, EdgeDirection, Directed};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot, Config};
+use petgraph::visit::EdgeRef;
+use petgraph;
 
 use std::hash::{Hash,Hasher};
 
@@ -17,6 +19,12 @@ use std::fmt;
 #[derive(Debug)]
 pub enum AudioGraphError {
     Cycle,
+}
+
+impl From<petgraph::algo::Cycle<NodeIndex>> for AudioGraphError {
+    fn from(e : petgraph::algo::Cycle<NodeIndex>) -> AudioGraphError {
+        AudioGraphError::Cycle
+    }
 }
 
 pub trait AudioEffect {
@@ -151,7 +159,7 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size], self.channels))
     }
 
-    pub fn outputs(& self, src : NodeIndex) -> Edges<Connection, u32> {
+    pub fn outputs(& self, src : NodeIndex) -> Edges<Connection, Directed> {
         self.graph.edges_directed(src, EdgeDirection::Outgoing)
     }
 
@@ -163,7 +171,7 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
         self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
     }
 
-    pub fn inputs(& self, dest : NodeIndex) -> Edges<Connection, u32> {
+    pub fn inputs(& self, dest : NodeIndex) -> Edges<Connection, Directed> {
         self.graph.edges_directed(dest, EdgeDirection::Incoming)
     }
 
@@ -176,17 +184,10 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
     }
 
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
-        self.schedule = toposort(&self.graph);
+        self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
         self.schedule_expected_time.resize(self.schedule.len(), 0.);
 
-        //we take this occasion to check if the graph is cyclic
-        //For that, we just need to check if the schedule has less elements than the size of the graph
-        if self.schedule.len() < self.graph.node_count() {
-            Err(AudioGraphError::Cycle)
-        }
-        else {
-            Ok(())
-        }
+        Ok(())
     }
 
 
@@ -273,7 +274,7 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 //TODO: we should have a more efficient lookup than this linear search
                 while self.schedule[i+1..len].iter().rev().any(|&no| no == current_node) {
                     //Pick one input (and here the first one)
-                    current_node = self.inputs(current_node).next().expect("No input node found").0;
+                    current_node = self.inputs(current_node).next().expect("No input node found").source();
                     {//For lifetime and borrowing of self.graph
                         let input_node = self.graph.node_weight(current_node).expect("Next remaining node not found");
 
@@ -370,9 +371,9 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 Quality::Normal => {
                     let mut stats = self.time_input;
                     //Get input edges here, and the buffers on this connection, and mix them
-                    for (_, connection) in self.inputs(*index) {
+                    for connection in self.inputs(*index) {
                         let input_time = PreciseTime::now();
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
                             *s1 += *s2
                         }
                         let time_now = PreciseTime::now();
@@ -410,9 +411,9 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 Quality::Degraded => {
                     let start_time = PreciseTime::now();
 
-                    for (_, connection) in self.inputs(*index) {
+                    for connection in self.inputs(*index) {
                         //debug_assert_eq!(connection.buffer.len(), buffer.len());
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
                             *s1 += *s2
                         }
                     }
@@ -520,9 +521,9 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
                 Quality::Normal => {
                     let mut stats = self.time_input;
                     //Get input edges here, and the buffers on this connection, and mix them
-                    for (_, connection) in self.inputs(*index) {
+                    for connection in self.inputs(*index) {
                         let input_time = PreciseTime::now();
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
                             *s1 += *s2
                         }
                         let time_now = PreciseTime::now();
@@ -630,9 +631,9 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioEffect for Audi
     fn process(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {
             //Get input edges here, and the buffers on this connection, and mix them
-            for (_, connection) in self.inputs(*index) {
+            for connection in self.inputs(*index) {
                 //TODO: for later, case with connections that change of size
-                for (s1,s2) in buffer.iter_mut().zip(&connection.buffer) {
+                for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
                     *s1 += *s2
                 }
             }

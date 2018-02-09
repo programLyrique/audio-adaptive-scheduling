@@ -5,14 +5,17 @@ extern crate time;
 
 use audio_adaptive::effect::*;
 
-use audio_adaptive::experiments;
+use audio_adaptive::experiments::{RandomGenerator, GraphGenerator, NodeClass};
 
 use portaudio as pa;
+
+use std::rc::Rc;
 
 use std::sync::mpsc;
 use std::env;
 use std::thread;
 
+use rand::{thread_rng, Rng};
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -33,16 +36,33 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
     //Build the audiograph
     //let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
-    let mut audio_graph = AudioGraph::new(FRAMES_PER_BUFFER as usize, CHANNELS as u32);
-    let mixer = audio_graph.add_node(DspNode::Mixer);
-    for i in 1..nb_oscillators {
-        audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.9 / nb_oscillators as f32 ), mixer);
-    }
+
+
+    // let mut audio_graph = AudioGraph::new(FRAMES_PER_BUFFER as usize, CHANNELS as u32);
+    // let mixer = audio_graph.add_node(DspNode::Mixer);
+    // for i in 1..nb_oscillators {
+    //     audio_graph.add_input(DspNode::Oscillator(i as f32, 350 + i*50, 0.9 / nb_oscillators as f32 ), mixer);
+    // }
     // let mut prev_mod = mixer;
     // for i in 1..nb_oscillators {
     //     prev_mod = audio_graph.add_input(DspNode::Modulator(i as f32, 350 + i*50, 1.0 ), prev_mod);
     // }
     // audio_graph.add_input(DspNode::Oscillator(0., 135, 0.5 ), prev_mod);
+
+
+    let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
+    let mut randGen = RandomGenerator::new(nb_oscillators as usize);
+
+    let mut audio_graph = randGen.generate(&  |c|
+        {
+            let mut rng = thread_rng();
+            match c  {
+                NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
+                NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
+            }
+        });
+
+
     audio_graph.update_schedule().expect("Cycle detected");
 
     //Thread to monitor the audio callback

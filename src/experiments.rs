@@ -8,19 +8,18 @@ use effect::*;
 
 use std::fmt;
 
-
 pub enum NodeClass {
     Input,
     Transformer,
     Output,
 }
 
-pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq> {
+pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
     //Generate several audio nodes
     //Give a function that generates an audio node as argument, maybe.
     // Or a vector of possible nodes?
     // Depending on the topology of the graph?
-    fn generate(&mut self, node : &Fn(NodeClass) -> T) -> AudioGraph<T>;
+    fn generate(&mut self, node : & Fn(NodeClass) -> T) -> AudioGraph<T>;
 }
 
 
@@ -56,10 +55,8 @@ impl RandomGenerator {
     }
 }
 
-
-
 impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for RandomGenerator {
-    fn generate(&mut self, node : &Fn(NodeClass) -> T) -> AudioGraph<T> {
+    fn generate(&mut self, node : & Fn(NodeClass) -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
@@ -79,7 +76,7 @@ impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for Ran
             }
         }
 
-        //Generate graphfrom that
+        //Generate graph from that
         let mut graph = AudioGraph::new(64, 1);
 
         //Add required number of nodes and store their indexes
@@ -115,16 +112,22 @@ impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for Ran
 mod tests {
     use super::*;
     use effect::*;
+    use rand::{thread_rng, Rng};
 
     #[test]
     fn test_graph_gen() {
         let size = 10;
+
+        let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
         let mut randGen = RandomGenerator::new(size);
         {
             let graph = randGen.generate(& |c|
-                match c  {
-                    NodeClass::Input => DspNode::Oscillator(5., 500, 1.0),
-                    NodeClass::Transformer | NodeClass::Output => DspNode::Modulator(5., 500, 1.0),
+                {
+                    let mut rng = thread_rng();
+                    match c  {
+                        NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
+                        NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
+                    }
                 }
                 );
 
