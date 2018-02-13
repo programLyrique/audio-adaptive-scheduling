@@ -9,11 +9,12 @@ use audio_adaptive::experiments::{RandomGenerator, GraphGenerator, NodeClass};
 
 use portaudio as pa;
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use std::sync::mpsc;
 use std::env;
 use std::thread;
+use std::process::exit;
 
 use rand::{thread_rng, Rng};
 
@@ -35,9 +36,9 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     let settings = try!(pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER));
 
     //Build the audiograph
-    //let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
-
-
+    // let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
+    //
+    //
     // let mut audio_graph = AudioGraph::new(FRAMES_PER_BUFFER as usize, CHANNELS as u32);
     // let mixer = audio_graph.add_node(DspNode::Mixer);
     // for i in 1..nb_oscillators {
@@ -50,12 +51,12 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     // audio_graph.add_input(DspNode::Oscillator(0., 135, 0.5 ), prev_mod);
 
 
-    let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
-    let mut randGen = RandomGenerator::new(nb_oscillators as usize);
 
-    let mut audio_graph = randGen.generate(&  |c|
+    let randGen = RandomGenerator::new(nb_oscillators as usize);
+    let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
+
+    let mut audio_graph = randGen.generate(& move |c, rng|
         {
-            let mut rng = thread_rng();
             match c  {
                 NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
                 NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
@@ -115,7 +116,8 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 1 {
-        panic!("Usage: basic_example nb_oscillators");
+        println!("Usage: basic_example nb_oscillators");
+        exit(0);
     }
     run(args[1].parse::<u32>().expect("Usage: basic_example nb_oscillators")).unwrap()
 }

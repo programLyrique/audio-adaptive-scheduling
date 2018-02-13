@@ -8,6 +8,7 @@ use effect::*;
 
 use std::fmt;
 
+#[derive(Copy, Clone)]
 pub enum NodeClass {
     Input,
     Transformer,
@@ -19,7 +20,8 @@ pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
     //Give a function that generates an audio node as argument, maybe.
     // Or a vector of possible nodes?
     // Depending on the topology of the graph?
-    fn generate(&mut self, node : & Fn(NodeClass) -> T) -> AudioGraph<T>;
+    fn generate(&mut self, node : & Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
+    //fn generate(&mut self) -> AudioGraph<DspNode>;
 }
 
 
@@ -55,8 +57,8 @@ impl RandomGenerator {
     }
 }
 
-impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for RandomGenerator {
-    fn generate(&mut self, node : & Fn(NodeClass) -> T) -> AudioGraph<T> {
+impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for RandomGenerator {
+    fn generate(&mut self, node : & Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
@@ -86,10 +88,12 @@ impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for Ran
             //If it is an input
             if parents_cnt[i] == 0 {
                 //Insert a generator of sound
-                indexes.push(graph.add_node(node(NodeClass::Input)));
+                let new_node = node(NodeClass::Input, &mut self.rng);
+                indexes.push(graph.add_node(new_node));
             }
             else {
-                indexes.push(graph.add_node(node(NodeClass::Transformer)));
+                let new_node = node(NodeClass::Transformer, &mut self.rng);
+                indexes.push(graph.add_node(new_node));
             }
 
         };
@@ -101,7 +105,6 @@ impl<T : Copy + fmt::Display+ AudioEffect + Hash + Eq> GraphGenerator<T> for Ran
                 };
             };
         };
-
         graph
     }
 }
@@ -121,9 +124,8 @@ mod tests {
         let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
         let mut randGen = RandomGenerator::new(size);
         {
-            let graph = randGen.generate(& |c|
+            let graph = randGen.generate(& |c, rng|
                 {
-                    let mut rng = thread_rng();
                     match c  {
                         NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
                         NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
