@@ -9,14 +9,13 @@ use audio_adaptive::experiments::{RandomGenerator, GraphGenerator, NodeClass};
 
 use portaudio as pa;
 
-use std::sync::Arc;
 
 use std::sync::mpsc;
 use std::env;
 use std::thread;
 use std::process::exit;
 
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -52,16 +51,19 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
 
 
-    let randGen = RandomGenerator::new(nb_oscillators as usize);
-    let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
+    let rand_gen = RandomGenerator::new(nb_oscillators as usize);
 
-    let mut audio_graph = randGen.generate(& move |c, rng|
+    let mut audio_graph = rand_gen.generate(& |c, rng|
         {
+            let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
             match c  {
                 NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
                 NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
             }
         });
+
+    //println!("Random graph: {:?}", randGen);
+
 
 
     audio_graph.update_schedule().expect("Cycle detected");

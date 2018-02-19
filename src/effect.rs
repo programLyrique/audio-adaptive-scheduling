@@ -39,15 +39,15 @@ pub trait AudioEffect {
 }
 
 
-pub struct Connection<'a> {
+pub struct Connection {
     buffer : Vec<f32>,
     resample : Cell<bool>,//Has to be resampled
     resampled : bool,//Was resampled during previous cycle
-    resampler : Resampler<'a>
+    resampler : Resampler
 }
 
-impl<'a> Connection<'a> {
-    fn new(buffer : Vec<f32>, channels : u32) -> Connection<'a>  {
+impl Connection {
+    fn new(buffer : Vec<f32>, channels : u32) -> Connection  {
         Connection {buffer : buffer ,
                 resample : Cell::new(false),
                 resampled : false,
@@ -56,7 +56,7 @@ impl<'a> Connection<'a> {
     }
 }
 
-impl<'a> fmt::Display for Connection<'a> {
+impl fmt::Display for Connection {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         write!(f, "edge")
     }
@@ -71,9 +71,9 @@ pub struct TimeMonitor {
     pub nb_degraded : u64, //Number of degraded effects
 }
 
-pub struct AudioGraph<'a, T : Copy + AudioEffect + fmt::Display + Eq> {
-    graph : Graph<T,Connection<'a>>,
-    sink : Connection<'a>,
+pub struct AudioGraph<T : Copy + AudioEffect + fmt::Display + Eq> {
+    graph : Graph<T,Connection>,
+    sink : Connection,
     schedule : Vec< NodeIndex<u32> >,
     schedule_expected_time : Vec<f64>,//Cumulated expected execution time for every node starting from the end
     //Use to calculate remaining expected time
@@ -103,7 +103,7 @@ impl fmt::Display for Quality {
     }
 }
 
-impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for AudioGraph<'a, T> {
+impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for AudioGraph<T> {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         let config = vec![Config::EdgeNoLabel];
         let dot_fmt = Dot::with_config(&self.graph, &config);
@@ -111,11 +111,11 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for Aud
     }
 }
 
-impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
+impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
     /// Create a new AudioGraph
     /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
     /// which is `frames_per_buffer * channels`
-    pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<'a, T> {
+    pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<T> {
         let size = frames_per_buffer * channels as usize;
 
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
@@ -626,7 +626,7 @@ impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<'a, T> {
 
 }
 
-impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<'a, T> {
+impl<'a, T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioEffect for AudioGraph<T> {
     ///A non adaptive version of the execution of the audio graph
     fn process(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize) {
         for index in self.schedule.iter() {

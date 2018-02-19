@@ -20,7 +20,7 @@ pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
     //Give a function that generates an audio node as argument, maybe.
     // Or a vector of possible nodes?
     // Depending on the topology of the graph?
-    fn generate(&mut self, node : & Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
+    fn generate(self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
     //fn generate(&mut self) -> AudioGraph<DspNode>;
 }
 
@@ -58,7 +58,7 @@ impl RandomGenerator {
 }
 
 impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for RandomGenerator {
-    fn generate(&mut self, node : & Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
+    fn generate(mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
@@ -66,7 +66,7 @@ impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for Ran
 
         //Fin input and outputs
         let mut children_cnt = vec![0;size];
-        let mut parents_cnt = vec![0 ;size];
+        let mut parents_cnt = vec![0;size];
         //Inputs have 0 parents, outputs have 0 children.
 
         for (i, row) in self.adjacency_matrix.iter().enumerate() {

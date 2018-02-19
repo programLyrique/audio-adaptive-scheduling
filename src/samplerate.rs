@@ -110,19 +110,19 @@ impl<'a> SimpleResampler<'a> {
 }
 
 #[derive(Debug)]
-pub struct Resampler<'a> {
+pub struct Resampler {
     channels : u32,
     src_ratio :  f64,
     end_of_input : bool,
-    src_state : &'a mut SRC_STATE,
+    src_state : *mut SRC_STATE,
 }
 
-impl<'a> Resampler<'a> {
-    pub fn new(converter_type : ConverterType, channels : u32, src_ratio: f64) -> Resampler<'a> {
+impl Resampler {
+    pub fn new(converter_type : ConverterType, channels : u32, src_ratio: f64) -> Resampler {
         let error : *mut c_int = ptr::null_mut();
         unsafe {
             let state = src_new(converter_type, channels as c_int, error);
-            Resampler {src_ratio : src_ratio, end_of_input : false, src_state : &mut *state, channels : channels}
+            Resampler {src_ratio : src_ratio, end_of_input : false, src_state : state, channels : channels}
         }
     }
 
@@ -171,7 +171,7 @@ impl<'a> Resampler<'a> {
     }
 }
 
-impl<'a> Drop for Resampler<'a> {
+impl Drop for Resampler {
     fn drop(&mut self) {
         unsafe {src_delete(self.src_state)};
     }
@@ -181,8 +181,8 @@ impl<'a> Drop for Resampler<'a> {
 /// SmartResampler uses a ring buffer to output the same number of samples as requested.
 /// It makes it easier to change the resampling ratio in real time. We also aim at making easier at changing
 /// the resampling algorithm, in real time.
-pub struct SmartResampler<'a> {
-    resampler: Resampler<'a>,
+pub struct SmartResampler {
+    resampler: Resampler,
     input_ring : rb::RingBuffer<f32>,
     output_ring : rb::RingBuffer<f32>,
     interm_buffer : Vec<f32>,
@@ -190,10 +190,10 @@ pub struct SmartResampler<'a> {
 }
 
 // TODO: we don't output the last half buffer now... maybe use the next_buffer_last flag?
-impl<'a> SmartResampler<'a> {
+impl SmartResampler {
     /// `max_buffer_size` must the maximum size an input buffer can be. This is typically
     /// `nb_channels * frames_per_buffer * max_up_ratio`.
-    pub fn new(converter_type : ConverterType, channels : u32, src_ratio: f64, max_buffer_size: usize) -> SmartResampler<'a> {
+    pub fn new(converter_type : ConverterType, channels : u32, src_ratio: f64, max_buffer_size: usize) -> SmartResampler {
         let resampler = Resampler::new(converter_type, channels, src_ratio);
 
         let input_buffer  = rb::RingBuffer::new(2 * max_buffer_size);
