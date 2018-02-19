@@ -20,7 +20,7 @@ pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
     //Give a function that generates an audio node as argument, maybe.
     // Or a vector of possible nodes?
     // Depending on the topology of the graph?
-    fn generate(self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
+    fn generate(&mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
     //fn generate(&mut self) -> AudioGraph<DspNode>;
 }
 
@@ -58,7 +58,7 @@ impl RandomGenerator {
 }
 
 impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for RandomGenerator {
-    fn generate(mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
+    fn generate(&mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
@@ -122,9 +122,9 @@ mod tests {
         let size = 10;
 
         let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
-        let mut randGen = RandomGenerator::new(size);
+        let mut rand_gen = RandomGenerator::new(size);
         {
-            let graph = randGen.generate(& |c, rng|
+            let graph = rand_gen.generate(& |c, rng|
                 {
                     match c  {
                         NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
@@ -137,6 +137,6 @@ mod tests {
         }
 
         //Check if it is low triangular indeed
-        assert!(randGen.adjacency_matrix.iter().enumerate().all(|(i,row)| row.len() == i))
+        assert!(rand_gen.adjacency_matrix.iter().enumerate().all(|(i,row)| row.len() == i))
     }
 }

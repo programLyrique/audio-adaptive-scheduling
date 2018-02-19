@@ -51,7 +51,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
 
 
-    let rand_gen = RandomGenerator::new(nb_oscillators as usize);
+    let mut rand_gen = RandomGenerator::new(nb_oscillators as usize);
 
     let mut audio_graph = rand_gen.generate(& |c, rng|
         {
