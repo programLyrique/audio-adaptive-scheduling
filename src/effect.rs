@@ -78,7 +78,8 @@ pub struct AudioGraph<T : Copy + AudioEffect + fmt::Display + Eq> {
     schedule_expected_time : Vec<f64>,//Cumulated expected execution time for every node starting from the end
     //Use to calculate remaining expected time
     size : usize,//Default size of a connection buffer
-    channels : u32,//Number of channels
+    channels : u32,//Number of channels,
+    frames_per_buffer : u32,
     time_nodes : Vec<Stats>,//To keep mean execution time for every type of node
     //Why not a HashMap? Too slow! (100-150µs). We rather do our "own" hash table, which perfect
     //hashing as we know the number of different kinds of nodes (it is nb_effects)
@@ -108,6 +109,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for AudioGr
         /*let config = vec![Config::EdgeNoLabel];
         let dot_fmt = Dot::with_config(&self.graph, &config);*/
         let dot_fmt = Dot::new(&self.graph);
+        write!(f, "Default size: {}\n", self.size)?;
+        write!(f, "Channels: {}\n", self.channels)?;
         dot_fmt.fmt(f)
     }
 }
@@ -116,18 +119,31 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
     /// Create a new AudioGraph
     /// `frames_per_buffer` and `channels`are used to compute the actual size of a buffer
     /// which is `frames_per_buffer * channels`
-    pub fn new(frames_per_buffer : usize, channels : u32) -> AudioGraph<T> {
-        let size = frames_per_buffer * channels as usize;
+    pub fn new(frames_per_buffer : u32, channels : u32) -> AudioGraph<T> {
+        let size = frames_per_buffer as usize * channels as usize;
 
         AudioGraph {graph : Graph::new(), schedule : Vec::new(),
             sink : Connection::new(vec![0.;size], channels),
             schedule_expected_time : Vec::new(),
             size : size,
+            frames_per_buffer : frames_per_buffer,
             channels : channels,
             time_nodes : vec![Stats::new();T::nb_effects()],
             time_input : Stats::new(),
             time_output : Stats::new(),
             time_resampler : Stats::init(15.)}
+    }
+
+    pub fn nb_channels(&self) -> u32 {
+        self.channels
+    }
+
+    pub fn default_buffer_size(&self) -> usize  {
+        self.size
+    }
+
+    pub fn frames_per_buffer(&self) -> u32 {
+        self.frames_per_buffer
     }
 
     pub fn add_node(&mut self, node : T) -> NodeIndex {
@@ -187,6 +203,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
         self.schedule_expected_time.resize(self.schedule.len(), 0.);
+
+        print!("The schedule is: ", );
+        for node_index in self.schedule.iter() {
+            let node = self.graph.node_weight(*node_index).unwrap();
+            print!("{} -> ", node);
+        }
+        println!(" Sink");
 
         Ok(())
     }
@@ -350,6 +373,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
         for (i,index) in self.schedule.iter().enumerate() {
 
+            {
+                println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
+            }
+
             //We won't perform another analysis on quality once we are in the degraded mode
             let time_update = PreciseTime::now();
             match quality {
@@ -401,7 +428,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     while let Some(edge) = edges.next_edge(&self.graph) {
                         let output_time = PreciseTime::now();
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        assert_eq!(buffer.len() , connection.buffer.len());
+                        debug_assert_eq!(buffer.len() , connection.buffer.len());
                         connection.buffer.copy_from_slice(buffer);//TODO: panic here because of destination and source slice with not same size
                         connection.resampled = false;
                         let time_now = PreciseTime::now();
@@ -816,12 +843,15 @@ mod tests {
 
         audio_graph.update_schedule().expect("There is a cycle here");
 
-        for _ in 0..10000 {
+        let mut missed_deadlines = 0;
+
+        for _ in 0..1000 {
             let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 500.);
             if times.budget < 0 {
-                println!("Missed deadline!");
+                missed_deadlines +=1;
             }
         };
+        println!("Missed deadlines: {}", missed_deadlines);
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }
 
@@ -829,7 +859,7 @@ mod tests {
     fn test_chain_total() {
         let nb_frames = 128;
         let mut audio_graph = AudioGraph::new(nb_frames, 2);
-        let mut buffer = vec![0.;nb_frames * 2];
+        let mut buffer = vec![0.;nb_frames as usize * 2];
 
         let mixer = audio_graph.add_node(DspNode::Mixer);
         let nb_modulators = 300;
@@ -840,12 +870,15 @@ mod tests {
         audio_graph.add_input(DspNode::Oscillator(0., 135, 0.7 ), prev_mod);
         audio_graph.update_schedule().expect("Cycle detected");
 
+        let mut missed_deadlines = 0;
+
         for _ in 0..1000 {
             let times = audio_graph.process_adaptive_exhaustive(buffer.as_mut_slice(), 44100, 2, 3000.);
             if times.budget < 0 {
-                println!("Missed deadline!");
+                missed_deadlines+=1;
             }
         };
+        println!("Missed deadlines: {}", missed_deadlines);
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }
 
@@ -853,7 +886,7 @@ mod tests {
     fn test_chain_progressive() {
         let nb_frames = 128;
         let mut audio_graph = AudioGraph::new(nb_frames, 2);
-        let mut buffer = vec![0.;nb_frames * 2];
+        let mut buffer = vec![0.;nb_frames as usize * 2];
 
         let mixer = audio_graph.add_node(DspNode::Mixer);
         let nb_modulators = 300;
@@ -864,12 +897,15 @@ mod tests {
         audio_graph.add_input(DspNode::Oscillator(0., 135, 0.7 ), prev_mod);
         audio_graph.update_schedule().expect("Cycle detected");
 
+        let mut missed_deadlines = 0;
+
         for _ in 0..1000 {
             let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 3000.);
             if times.budget < 0 {
-                println!("Missed deadline!");
+                missed_deadlines += 1;
             }
         };
+        println!("Missed deadlines: {}", missed_deadlines);
         assert!(buffer.iter().any(|x| (*x).abs() > EPSILON))
     }
 

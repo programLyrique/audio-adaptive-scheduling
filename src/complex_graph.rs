@@ -19,21 +19,17 @@ use rand::Rng;
 
 use std::io::prelude::*;
 use std::fs::File;
-use std::io;
 
 const NUM_SECONDS : u32 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
-const FRAMES_PER_BUFFER: u32 = 64;
+
 
 ///Launch a audio graph with nb_oscillators
 /// On my machine, 1500 - 1600 oscillators (1545...) seem to start entailing miss deadlines
 fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
-
     let pa = try!(pa::PortAudio::new());
-
-    let settings = try!(pa.default_output_stream_settings(CHANNELS, SAMPLE_RATE, FRAMES_PER_BUFFER));
 
     //Build the audiograph
     // let buffer_size = CHANNELS as usize * FRAMES_PER_BUFFER as usize;
@@ -50,28 +46,27 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
     // }
     // audio_graph.add_input(DspNode::Oscillator(0., 135, 0.5 ), prev_mod);
 
-
+    println!("==== Generation of random graph ====", );
 
     let mut rand_gen = RandomGenerator::new(nb_oscillators as usize);
 
     let mut audio_graph = rand_gen.generate(& |c, rng|
         {
-            let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
+            let generators = vec![DspNode::Modulator(5., 500 + rng.gen_range::<u32>(0, 400), 1.0),
+                DspNode::LowPass([5.,6.,7.,8.],200. + rng.gen_range::<f32>(0., 400.),0.8)];
             match c  {
-                NodeClass::Input => DspNode::Oscillator(6., 500, 1.0),
+                NodeClass::Input => DspNode::Oscillator(6., 500 + rng.gen_range::<u32>(0, 400), 1.0),
                 NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
             }
         });
 
-    println!("==== Generation of random graph ====", );
     println!("Matrix of random graph: {:?}", rand_gen);
     println!("Random graph: {}", audio_graph);
 
-    io::stdout().flush().ok().expect("Could not flush stdout");
-
-
-
     audio_graph.update_schedule().expect("Cycle detected");
+
+    let settings = try!(pa.default_output_stream_settings(audio_graph.nb_channels() as i32,
+    SAMPLE_RATE, audio_graph.frames_per_buffer()));
 
     //Thread to monitor the audio callback
     let (tx_monit, rx_monit) = mpsc::channel::<TimeMonitor>();
