@@ -19,6 +19,7 @@ use rand::Rng;
 
 use std::io::prelude::*;
 use std::fs::File;
+use std::io;
 
 const NUM_SECONDS : u32 = 5;
 const CHANNELS: i32 = 2;
@@ -62,7 +63,11 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
             }
         });
 
-    //println!("Random graph: {:?}", randGen);
+    println!("==== Generation of random graph ====", );
+    println!("Matrix of random graph: {:?}", rand_gen);
+    println!("Random graph: {}", audio_graph);
+
+    io::stdout().flush().ok().expect("Could not flush stdout");
 
 
 
@@ -117,7 +122,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 1 {
+    if args.len() < 2 {
         println!("Usage: basic_example nb_oscillators");
         exit(0);
     }

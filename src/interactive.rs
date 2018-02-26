@@ -14,7 +14,7 @@ use std::error::Error;
 
 use rustbox::Key;
 use rustbox::{Color, RustBox};
-
+use std::process::exit;
 
 
 mod audioengine;
@@ -25,8 +25,9 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 1 {
-        panic!("Usage: basic_example Audio_File");
+    if args.len() < 2 {
+        println!("Usage: basic_example Audio_File");
+        exit(0);
     }
 
     let mut audioengine = audioengine::AudioEngine::new(&args[1]).unwrap();
@@ -45,8 +46,6 @@ fn main() {
     let mut ratio = UP_RATIO;
     while audioengine.stream.is_active().unwrap() {
         rustbox.clear();
-        rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
-        rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Ratio : {}", ratio));
 
         // let cpu_load = stream.cpu_load();
         // let stream_infos = stream.info();
@@ -57,7 +56,7 @@ fn main() {
             Ok(rustbox::Event::KeyEvent(key)) => {
                 match key {
                     Key::Up => {ratio += 1.; audioengine.control_sender.send(ratio).unwrap();},
-                    Key::Down => {ratio -= 1.; audioengine.control_sender.send(ratio).unwrap();},
+                    Key::Down if ratio > 1. => {ratio -= 1.; audioengine.control_sender.send(ratio).unwrap();},
                     Key::Char('q') => {
                         audioengine.stream.stop().unwrap();
                         break;},
@@ -67,6 +66,8 @@ fn main() {
             Err(e) => panic!("{}", e.description()),
             _ => {}
         };
+        rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black, "Simple test of sound nodes with tradeoff between quality and deadlines.");
+        rustbox.print(6, 9, rustbox::RB_BOLD, Color::White, Color::Black, &format!("Ratio : {}", ratio));
 
         rustbox.present();
     }

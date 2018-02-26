@@ -58,7 +58,7 @@ impl Connection {
 
 impl fmt::Display for Connection {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "edge")
+        write!(f, "{}", self.buffer.len())
     }
 }
 
@@ -105,8 +105,9 @@ impl fmt::Display for Quality {
 
 impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> fmt::Display for AudioGraph<T> {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
-        let config = vec![Config::EdgeNoLabel];
-        let dot_fmt = Dot::with_config(&self.graph, &config);
+        /*let config = vec![Config::EdgeNoLabel];
+        let dot_fmt = Dot::with_config(&self.graph, &config);*/
+        let dot_fmt = Dot::new(&self.graph);
         dot_fmt.fmt(f)
     }
 }
@@ -400,7 +401,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     while let Some(edge) = edges.next_edge(&self.graph) {
                         let output_time = PreciseTime::now();
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        connection.buffer.copy_from_slice(buffer);
+                        assert_eq!(buffer.len() , connection.buffer.len());
+                        connection.buffer.copy_from_slice(buffer);//TODO: panic here because of destination and source slice with not same size
                         connection.resampled = false;
                         let time_now = PreciseTime::now();
                         let duration = output_time.to(time_now).num_microseconds().unwrap();
@@ -747,7 +749,7 @@ impl Hash for DspNode {
 
 impl fmt::Display for DspNode {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.id())
+        write!(f, "{:?}", *self)
     }
 }
 

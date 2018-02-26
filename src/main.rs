@@ -7,9 +7,8 @@ extern crate lazy_static;
 
 
 use std::env;
-
-
 use std::thread;
+use std::process::exit;
 
 mod audioengine;
 
@@ -17,8 +16,9 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 1 {
-        panic!("Usage: basic_example Audio_File");
+    if args.len() < 2 {
+        println!("Usage: basic_example Audio_File");
+        exit(0);
     }
 
     let mut audioengine = audioengine::AudioEngine::new(&args[1]).unwrap();
