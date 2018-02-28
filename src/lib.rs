@@ -19,3 +19,4 @@ pub mod ringbuffer;
 //pub mod reverb;
 pub mod effect;
 pub mod experiments;
+pub mod stats;

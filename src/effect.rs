@@ -16,6 +16,8 @@ use std::cell::{Cell};
 
 use std::fmt;
 
+use stats::*;
+
 #[derive(Debug)]
 pub enum AudioGraphError {
     Cycle,
@@ -204,12 +206,16 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
         self.schedule_expected_time.resize(self.schedule.len(), 0.);
 
-        print!("The schedule is: ", );
-        for node_index in self.schedule.iter() {
-            let node = self.graph.node_weight(*node_index).unwrap();
-            print!("{} -> ", node);
+        if self.schedule.len() <= 1000
+        {
+            print!("The schedule is: ", );
+            for node_index in self.schedule.iter() {
+                let node = self.graph.node_weight(*node_index).unwrap();
+                print!("{} -> ", node);
+            }
+            println!(" Sink");
         }
-        println!(" Sink");
+
 
         Ok(())
     }
@@ -373,9 +379,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
         for (i,index) in self.schedule.iter().enumerate() {
 
-            {
-                println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
-            }
+            println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
 
             //We won't perform another analysis on quality once we are in the degraded mode
             let time_update = PreciseTime::now();
@@ -461,8 +465,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
 
                         if connection.resample.get() && !resample {//It's the beginning of a degrading chain
-                        debug_assert_eq!(connection.buffer.len(), buffer.len());
-                        println!("Starting degrading");
+                            debug_assert_eq!(connection.buffer.len(), buffer.len());
+                            println!("Starting degrading");
                             resample = true;
                             if connection.resampled {//Should take about 11 microseconds
                                 connection.resampled = true;
@@ -528,6 +532,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
         for (i,index) in self.schedule.iter().enumerate() {
+            //println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
             let start_time = PreciseTime::now();
             //We won't perform another analysis on quality once we are in the degraded mode
             match quality {//300 nodes, 100µs?!
@@ -539,13 +544,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     first_degraded_node = Some(i as u64);
                     Quality::Degraded
                 },
-                Quality::Degraded => ()
+                Quality::Degraded => () // GO back to normal if there is enough time budget
             };
             // budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();
             //println!("{} microseconds", rel_deadline as i64 - budget);
 
             //Duplication, but not possible to put it in a method, as rust will complain about
-            // self borrowed as immutable and mutabel as the same time (as we need to modify some fields of self)
+            // self borrowed as immutable and mutable as the same time (as we need to modify some fields of self)
             match quality {
                 Quality::Normal => {
                     let mut stats = self.time_input;
@@ -597,9 +602,14 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             connection.resample.set(false);//Set to false for the next cycle
                         }
                         else {
+                            println!("Starting to degrade quality");
+
                             if !connection.resampled {
                                 connection.resampler.reset();
                                 connection.resampler.set_src_ratio_hard(0.5);
+                                //TODO: we should resample somewhere here!!!
+                                connection.buffer.truncate(soundcard_size/ 2);
+                                connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
                                 connection.resampled = true;
                             }
                             for (s1,s2) in buffer[0..end].iter_mut().zip(&connection.buffer[0..end]) {
@@ -631,6 +641,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         //If the quality has been degraded, in this version, we only upsample at the end, after the last node
         match quality {
             Quality::Degraded => {
+                println!("Ending degradation");
                 let start_time = PreciseTime::now();
                 if !self.sink.resampled {
                     self.sink.resampler.reset();
@@ -785,42 +796,6 @@ fn sine_wave(phase : f32, volume : f32) -> f32 {
     (phase * PI as f32 * 2.0).sin() as f32 * volume
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Stats {
-    mean : f64,
-    var : f64,//We may use it later, but we don't compute it so far
-    n : u64,
-}
-
-/// Compute an online mean: mean_{n+1} = f(mean_n, x)
-/// TODO: make it also possible to use an exponential moving average
-impl Stats {
-    fn new() -> Stats {
-        Stats {mean : 0., var : 0., n : 0}
-    }
-
-    fn init(m : f64) -> Stats {
-        Stats {mean : m, var : 0., n : 1}
-    }
-    //Better to make it generic on Num types?
-    //TODO: rather calculate a moving average
-    #[inline(always)]
-    fn update(&mut self, x : f64) -> f64 {
-        self.n += 1;
-        let delta = x - self.mean;
-        self.mean += delta / self.n as f64;
-        self.mean
-    }
-
-    #[inline(always)]
-    fn update_time(&mut self, prev_time : PreciseTime) -> f64 {
-        let time_now = PreciseTime::now();
-        let duration = prev_time.to(time_now).num_microseconds().unwrap();
-        self.update(duration as f64)
-    }
-
-
-}
 
 #[cfg(test)]
 mod tests {
