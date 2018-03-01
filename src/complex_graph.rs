@@ -13,6 +13,7 @@ use portaudio as pa;
 use std::sync::mpsc;
 use std::env;
 use std::thread;
+use std::time as rust_time;//To be used for thread::sleep for instance
 use std::process::exit;
 
 use rand::Rng;
@@ -20,7 +21,7 @@ use rand::Rng;
 use std::io::prelude::*;
 use std::fs::File;
 
-const NUM_SECONDS : u32 = 5;
+const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
 
@@ -91,7 +92,7 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
     });
 
-    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames, time, ..}| {
+    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames : _frames , time, ..}| {
 
         //time members are in seconds. We need to convert it to microseconds
         let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
@@ -107,7 +108,8 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
     try!(stream.start());
 
-    thread::sleep_ms(NUM_SECONDS * 1000);
+    let sleep_duration = rust_time::Duration::from_millis(NUM_SECONDS * 1000);
+    thread::sleep(sleep_duration);
 
     try!(stream.stop());
     try!(stream.close());

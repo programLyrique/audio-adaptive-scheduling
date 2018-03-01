@@ -2,7 +2,7 @@
 use petgraph::{Graph, EdgeDirection, Directed};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
-use petgraph::dot::{Dot, Config};
+use petgraph::dot::{Dot};
 use petgraph::visit::EdgeRef;
 use petgraph;
 
@@ -10,7 +10,7 @@ use std::hash::{Hash,Hasher};
 
 use samplerate::{Resampler, ConverterType};
 
-use time::{PreciseTime};
+use time::{PreciseTime, Duration};
 
 use std::cell::{Cell};
 
@@ -24,7 +24,7 @@ pub enum AudioGraphError {
 }
 
 impl From<petgraph::algo::Cycle<NodeIndex>> for AudioGraphError {
-    fn from(e : petgraph::algo::Cycle<NodeIndex>) -> AudioGraphError {
+    fn from(_e : petgraph::algo::Cycle<NodeIndex>) -> AudioGraphError {
         AudioGraphError::Cycle
     }
 }
@@ -345,12 +345,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     }
                 }
                 return Quality::Degraded;
-
                 //the last node must resample from the right input...
                 //TODO: from node_index, find the path to the output... and change buffer sizes
                 //Or rather, when buffer do not have the same size, automatically resample?
-
-
             }
         }
         return Quality::Normal;
@@ -404,12 +401,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let mut stats = self.time_input;
                     //Get input edges here, and the buffers on this connection, and mix them
                     for connection in self.inputs(*index) {
-                        let input_time = PreciseTime::now();
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
-                            *s1 += *s2
-                        }
-                        let time_now = PreciseTime::now();
-                        let duration = input_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            mixer(buffer, &connection.weight().buffer)
+                        }).num_microseconds().unwrap();
                         stats.update(duration as f64);
                         budget -= duration;
                     }
@@ -417,11 +411,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     {
                         let node = self.graph.node_weight_mut(*index).unwrap();
-                        let node_time = PreciseTime::now();
 
-                        node.process(buffer, samplerate, channels);
-                        let time_now = PreciseTime::now();
-                        let duration = node_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            node.process(buffer, samplerate, channels)
+                        }).num_microseconds().unwrap();
+
                         self.time_nodes[node.id()].update(duration as f64);
                         budget -= duration;
                     }
@@ -430,13 +424,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
-                        let output_time = PreciseTime::now();
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        debug_assert_eq!(buffer.len() , connection.buffer.len());
-                        connection.buffer.copy_from_slice(buffer);//TODO: panic here because of destination and source slice with not same size
-                        connection.resampled = false;
-                        let time_now = PreciseTime::now();
-                        let duration = output_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            debug_assert_eq!(buffer.len() , connection.buffer.len());
+                            connection.buffer.copy_from_slice(buffer);//TODO: panic here because of destination and source slice with not same size
+                            connection.resampled = false;
+                        }).num_microseconds().unwrap();
+
                         self.time_output.update(duration as f64);
                         budget -= duration;
                     }
@@ -446,9 +440,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     for connection in self.inputs(*index) {
                         //debug_assert_eq!(connection.buffer.len(), buffer.len());
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
-                            *s1 += *s2
-                        }
+                        mixer(buffer, &connection.weight().buffer);
                     }
 
                     {
@@ -544,10 +536,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     first_degraded_node = Some(i as u64);
                     Quality::Degraded
                 },
-                Quality::Degraded => () // GO back to normal if there is enough time budget
+                Quality::Degraded => () // Go back to normal if there is enough time budget
             };
-            // budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();
-            //println!("{} microseconds", rel_deadline as i64 - budget);
 
             //Duplication, but not possible to put it in a method, as rust will complain about
             // self borrowed as immutable and mutable as the same time (as we need to modify some fields of self)
@@ -556,23 +546,19 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let mut stats = self.time_input;
                     //Get input edges here, and the buffers on this connection, and mix them
                     for connection in self.inputs(*index) {
-                        let input_time = PreciseTime::now();
-                        for (s1,s2) in buffer.iter_mut().zip(&connection.weight().buffer) {
-                            *s1 += *s2
-                        }
-                        let time_now = PreciseTime::now();
-                        let duration = input_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            mixer(buffer, &connection.weight().buffer)
+                        }).num_microseconds().unwrap();
                         stats.update(duration as f64);
                     }
                     self.time_input = stats;
 
                     {
                         let node = self.graph.node_weight_mut(*index).unwrap();
-                        let node_time = PreciseTime::now();
 
-                        node.process(buffer, samplerate, channels);
-                        let time_now = PreciseTime::now();
-                        let duration = node_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            node.process(buffer, samplerate, channels);
+                        }).num_microseconds().unwrap();
                         self.time_nodes[node.id()].update(duration as f64);
                     }
 
@@ -580,12 +566,12 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
-                        let output_time = PreciseTime::now();
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        connection.buffer.copy_from_slice(buffer);
-                        connection.resampled = false;
-                        let time_now = PreciseTime::now();
-                        let duration = output_time.to(time_now).num_microseconds().unwrap();
+                        let duration = Duration::span(|| {
+                            connection.buffer.copy_from_slice(buffer);
+                            connection.resampled = false;
+                        }).num_microseconds().unwrap();
+
                         self.time_output.update(duration as f64);
                     }
                 },
@@ -596,9 +582,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
                         if connection.resample.get() {//Means that resampling has already been done previously on the chain
-                            for (s1,s2) in buffer[0..end].iter_mut().zip(&connection.buffer[0..end]) {
-                                *s1 += *s2
-                            };
+                            mixer(&mut buffer[0..end], &connection.buffer[0..end]);
                             connection.resample.set(false);//Set to false for the next cycle
                         }
                         else {
@@ -612,9 +596,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                                 connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
                                 connection.resampled = true;
                             }
-                            for (s1,s2) in buffer[0..end].iter_mut().zip(&connection.buffer[0..end]) {
-                                *s1 += *s2
-                            }
+                            mixer(&mut buffer[0..end], &connection.buffer[0..end]);
                         }
                     }
 
@@ -627,7 +609,6 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     //Outcoming edges
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
-
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
                         connection.buffer[0..end].copy_from_slice(&buffer[0..end]);
                         connection.resample.set(true);
@@ -774,6 +755,13 @@ impl AudioEffect for DspNode {
         }
     }
 }
+
+fn mixer(buffer: &mut [f32], input_buffer: & [f32]) {
+    for (s1,s2) in buffer.iter_mut().zip(input_buffer) {
+        *s1 += *s2
+    }
+}
+
 impl Hash for DspNode {
     fn hash<H>(&self, state : &mut H) where H: Hasher {
         state.write_u32 (match *self {
