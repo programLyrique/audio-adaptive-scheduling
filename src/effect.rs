@@ -44,7 +44,7 @@ pub trait AudioEffect {
 pub struct Connection {
     buffer : Vec<f32>,
     resample : Cell<bool>,//Has to be resampled
-    resampled : bool,//Was resampled during previous cycle
+    resampled : bool,//Was resampled during previous cycle. Used to know whether we need to change the state of the resampler or if it has already been put in the right state on the previous cycles
     resampler : Resampler
 }
 
@@ -519,12 +519,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         let mut expected_remaining_time = self.schedule_expected_time[0];
         let mut first_degraded_node : Option<u64> = None;
 
+
         let mut quality = Quality::Normal;
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
         for (i,index) in self.schedule.iter().enumerate() {
-            //println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
+            println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
             let start_time = PreciseTime::now();
             //We won't perform another analysis on quality once we are in the degraded mode
             match quality {//300 nodes, 100µs?!
@@ -534,9 +535,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 } else {
                     expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
                     first_degraded_node = Some(i as u64);
+                    println!("Start degrading");
                     Quality::Degraded
                 },
-                Quality::Degraded => () // Go back to normal if there is enough time budget
+                Quality::Degraded => () //TODO: Go back to normal if there is enough time budget
             };
 
             //Duplication, but not possible to put it in a method, as rust will complain about
@@ -547,6 +549,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     //Get input edges here, and the buffers on this connection, and mix them
                     for connection in self.inputs(*index) {
                         let duration = Duration::span(|| {
+                            assert_eq!(buffer.len(), connection.weight().buffer.len());
+                            //We certainly need to resize buffer size here
                             mixer(buffer, &connection.weight().buffer)
                         }).num_microseconds().unwrap();
                         stats.update(duration as f64);
@@ -568,6 +572,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     while let Some(edge) = edges.next_edge(&self.graph) {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
                         let duration = Duration::span(|| {
+                            //If it was resampled during the previous cycles, reset bufffer sizes
+                            if connection.resampled {
+                                connection.buffer.resize(buffer.len(), 0.);
+                                //Should we also reset the resampler, put ratio to 1, and feed the resample function?
+                            }
                             connection.buffer.copy_from_slice(buffer);
                             connection.resampled = false;
                         }).num_microseconds().unwrap();
@@ -591,11 +600,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             if !connection.resampled {
                                 connection.resampler.reset();
                                 connection.resampler.set_src_ratio_hard(0.5);
-                                //TODO: we should resample somewhere here!!!
-                                connection.buffer.truncate(soundcard_size/ 2);
-                                connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
-                                connection.resampled = true;
+                                connection.buffer.truncate(end);
                             }
+                            connection.resampled = true;
+                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
                             mixer(&mut buffer[0..end], &connection.buffer[0..end]);
                         }
                     }
@@ -610,6 +618,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        if !connection.resampled {
+                            connection.buffer.truncate(end);
+                        }
+                        connection.resampled = true;
                         connection.buffer[0..end].copy_from_slice(&buffer[0..end]);
                         connection.resample.set(true);
                         //To indicate that we don't need to resample this connection for the next node
