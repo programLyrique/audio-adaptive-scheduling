@@ -97,7 +97,8 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
         //time members are in seconds. We need to convert it to microseconds
         let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
         assert!(time.buffer_dac- time.current < 1.0);
-        let times = audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
+        //let times = audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
+        let times = audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
         //audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
         tx_monit.send(times).unwrap();
 

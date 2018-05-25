@@ -394,8 +394,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             budget -= time_update.to(PreciseTime::now()).num_microseconds().unwrap();//300 nodes, 100µs?!
             //println!("{} microseconds", rel_deadline as i64 - budget);
 
+            let end = if resample {soundcard_size / 2} else {soundcard_size};
+
             //Duplication, but not possible to put it in a method, as rust will complain about
-            // self borrowed as immutable and mutabel as the same time (as we need to modify some fields of self)
+            // self borrowed as immutable and mutable as the same time (as we need to modify some fields of self)
             match quality {
                 Quality::Normal => {
                     let mut stats = self.time_input;
@@ -439,14 +441,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let start_time = PreciseTime::now();
 
                     for connection in self.inputs(*index) {
-                        //debug_assert_eq!(connection.buffer.len(), buffer.len());
+                        debug_assert_eq!(connection.weight().buffer.len(), buffer.len());
                         mixer(buffer, &connection.weight().buffer);
                     }
 
                     {
                         let node = self.graph.node_weight_mut(*index).unwrap();
 
-                        let end = if resample {soundcard_size / 2} else {soundcard_size};
                         node.process(&mut buffer[0..end], samplerate, channels);
                     }
 
@@ -457,38 +458,40 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
 
                         if connection.resample.get() && !resample {//It's the beginning of a degrading chain
-                            debug_assert_eq!(connection.buffer.len(), buffer.len());
                             println!("Starting degrading");
                             resample = true;
-                            if connection.resampled {//Should take about 11 microseconds
+                            if !connection.resampled {//Should take about 11 microseconds
+                                debug_assert_eq!(connection.buffer.len(), buffer.len());
                                 connection.resampled = true;
                                 connection.resampler.reset();
+                                connection.resampler.set_src_ratio_hard(0.5);
+                                connection.buffer.truncate(soundcard_size/ 2);
                             }
 
+                            debug_assert_eq!(connection.buffer.len(), buffer.len() / 2);
                             //downsample
-                            connection.resampler.set_src_ratio_hard(0.5);
-                            connection.buffer.truncate(soundcard_size/ 2);
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
                             connection.resample.set(false);
                         }
                         else if !connection.resample.get() && resample {//The end of the chain
-                            debug_assert_eq!(connection.buffer.len(), buffer.len()/2);
                             println!("Ending degrading");
                             resample = false;
-                            if connection.resampled {
+                            if !connection.resampled {
+                                debug_assert_eq!(connection.buffer.len(), buffer.len());
                                 connection.resampled = true;
                                 connection.resampler.reset();
+                                connection.resampler.set_src_ratio_hard(2.);
+                                connection.buffer.resize(soundcard_size, 0.);
                             }
+                            debug_assert_eq!(connection.buffer.len(), 2*end);
                             //upsample
-                            connection.resampler.set_src_ratio_hard(2.);
-                            connection.buffer.resize(soundcard_size, 0.);
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
                             connection.resample.set(false);
                         }
                         else {//Buffers have same size
-                            debug_assert_eq!(connection.buffer.len(), buffer.len());
-                            connection.resampled = false;
-                            connection.buffer.copy_from_slice(buffer);
+                            debug_assert_eq!(connection.buffer.len(), end);
+                            connection.resampled = false;//TODO: really?
+                            connection.buffer.copy_from_slice(&buffer[0..end]);
                         }
 
                     }
@@ -549,8 +552,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     //Get input edges here, and the buffers on this connection, and mix them
                     for connection in self.inputs(*index) {
                         let duration = Duration::span(|| {
-                            assert_eq!(buffer.len(), connection.weight().buffer.len());
-                            //We certainly need to resize buffer size here
+                            assert_eq!(buffer.len(), connection.weight().buffer.len());//Strange that it does not fail
+                            //We certainly need to resize buffer size here //TODO
                             mixer(buffer, &connection.weight().buffer)
                         }).num_microseconds().unwrap();
                         stats.update(duration as f64);
