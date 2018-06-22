@@ -13,6 +13,8 @@ extern crate petgraph;
 
 extern crate time;
 
+extern crate portaudio;
+
 pub mod samplerate;
 pub mod sndfile;
 pub mod ringbuffer;

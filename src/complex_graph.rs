@@ -78,27 +78,30 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
         let mut f = File::create(format!("complex_graph_{}_{}.csv",time::now().rfc3339(), nb_oscillators)).expect("Impossible to report execution times");
 
-        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\n").unwrap();
+        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
 
-            let seria = format!("{}\t{}\t{}\t{}\t{}\n", monitoring_infos.quality,
+            let seria = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:?}\n", monitoring_infos.quality,
                                             monitoring_infos.budget,
                                             monitoring_infos.expected_remaining_time,
                                             monitoring_infos.deadline,
-                                            monitoring_infos.nb_degraded);
+                                            monitoring_infos.nb_degraded,
+                                            monitoring_infos.execution_time,
+                                            monitoring_infos.choosing_duration,
+                                            monitoring_infos.callback_flags);
             f.write_all(seria.as_bytes()).unwrap();
        }
     //println!("End monitoring execution times because {:?}", rx_monit.recv().unwrap_err().description());
 
     });
 
-    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames : _frames , time, ..}| {
+    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames : _frames , time, flags}| {
 
         //time members are in seconds. We need to convert it to microseconds
         let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
         assert!(time.buffer_dac- time.current < 1.0);
         //let times = audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
-        let times = audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
+        let times = audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags));
         //audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
         tx_monit.send(times).unwrap();
 

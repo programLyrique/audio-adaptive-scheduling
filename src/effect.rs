@@ -11,6 +11,7 @@ use std::hash::{Hash,Hasher};
 use samplerate::{Resampler, ConverterType};
 
 use time::{PreciseTime, Duration};
+use portaudio as pa;
 
 use std::cell::{Cell};
 
@@ -65,12 +66,60 @@ impl fmt::Display for Connection {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum CallbackFlags {
+    NO_FLAG,
+    /// In a stream opened with paFramesPerBufferUnspecified, indicates that input data is
+    /// all silence (zeros) because no real data is available. In a stream opened without
+    /// `FramesPerBufferUnspecified`, it indicates that one or more zero samples have been
+    /// inserted into the input buffer to compensate for an input underflow.
+    INPUT_UNDERFLOW,
+    /// In a stream opened with paFramesPerBufferUnspecified, indicates that data prior to
+    /// the first sample of the input buffer was discarded due to an overflow, possibly
+    /// because the stream callback is using too much CPU time. Otherwise indicates that
+    /// data prior to one or more samples in the input buffer was discarded.
+    INPUT_OVERFLOW,
+    /// Indicates that output data (or a gap) was inserted, possibly because the stream
+    /// callback is using too much CPU time.
+    OUTPUT_UNDERFLOW,
+    /// Indicates that output data will be discarded because no room is available.
+    OUTPUT_OVERFLOW,
+    /// Some of all of the output data will be used to prime the stream, input data may be
+    /// zero.
+    PRIMING_OUTPUT,
+}
+
+impl CallbackFlags {
+    pub fn from_callback_flags(flags : pa::stream::callback_flags::CallbackFlags) -> CallbackFlags {
+        match flags  {
+            pa::stream::callback_flags::NO_FLAG => CallbackFlags::NO_FLAG,
+            pa::stream::callback_flags::INPUT_UNDERFLOW => CallbackFlags::INPUT_UNDERFLOW,
+            pa::stream::callback_flags::INPUT_OVERFLOW => CallbackFlags::INPUT_OVERFLOW,
+            pa::stream::callback_flags::OUTPUT_UNDERFLOW => CallbackFlags::OUTPUT_UNDERFLOW,
+            pa::stream::callback_flags::OUTPUT_OVERFLOW => CallbackFlags::OUTPUT_OVERFLOW,
+            pa::stream::callback_flags::PRIMING_OUTPUT => CallbackFlags::PRIMING_OUTPUT,
+            _ => CallbackFlags::NO_FLAG,
+        }
+    }
+}
+
+
+#[derive(Clone, Copy, Debug)]
 pub struct TimeMonitor {
+    /// Quality chosen
     pub quality : Quality,
+    /// Time budget remaining at the end (if negative, deadline exceeded)
     pub budget : i64,
+    /// Expected remaining time when we decided to start degraded (or at the end)
     pub expected_remaining_time : u64,
+    /// Deadline as given by portaudio
     pub deadline : u64,
-    pub nb_degraded : u64, //Number of degraded effects
+    /// Execution time for one cycle
+    pub execution_time : u64,
+    ///Number of degraded effects
+    pub nb_degraded : u64,
+    pub callback_flags : CallbackFlags,
+    ///Duration taken to compute the degradation
+    pub choosing_duration : u64,
 }
 
 pub struct AudioGraph<T : Copy + AudioEffect + fmt::Display + Eq> {
@@ -356,12 +405,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)
-    pub fn process_adaptive_progressive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
+    pub fn process_adaptive_progressive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64, flags : CallbackFlags) -> TimeMonitor {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
 
         let start = PreciseTime::now();
+        let mut choosing_duration = Duration::seconds(0);
 
         self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
 
@@ -382,7 +432,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             let time_update = PreciseTime::now();
             match quality {
                 Quality::Normal =>  {
-                    quality = self.update_adaptive(budget as f64, i);
+                    choosing_duration = Duration::span(|| {quality = self.update_adaptive(budget as f64, i);});
                     match quality  {
                         Quality::Degraded => {expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
                         first_degraded_node = Some(i as u64);},
@@ -441,6 +491,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let start_time = PreciseTime::now();
 
                     for connection in self.inputs(*index) {
+                        //TODO: crash here. Of course: buffer can be 2x connection.buffer
+                        // We need to check if it's inside a resampled branch and then
+                        // mix to buffer[0..end]
                         debug_assert_eq!(connection.weight().buffer.len(), buffer.len());
                         mixer(buffer, &connection.weight().buffer);
                     }
@@ -496,21 +549,26 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     }
 
+
+
                     budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 }
             }
 
         }
 
-        TimeMonitor {quality : quality, budget : budget,
+        TimeMonitor {quality, budget,
                     deadline : rel_deadline as u64,
                     expected_remaining_time : expected_remaining_time as u64,
+                    execution_time : start.to(PreciseTime::now()).num_microseconds().unwrap() as u64,
+                    callback_flags : flags,
+                    choosing_duration : choosing_duration.num_microseconds().unwrap() as u64,
                     nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
                 }
     }
 
     ///Same as process_adaptive but uses a less computationally costly strategy to find the nodes to degrade
-    pub fn process_adaptive_exhaustive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64) -> TimeMonitor {
+    pub fn process_adaptive_exhaustive(& mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64, flags : CallbackFlags) -> TimeMonitor {
         let mut budget = rel_deadline as i64;
 
         let soundcard_size = buffer.len();
@@ -522,7 +580,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         let mut expected_remaining_time = self.schedule_expected_time[0];
         let mut first_degraded_node : Option<u64> = None;
 
-
+        let mut choosing_duration = Duration::seconds(0);
         let mut quality = Quality::Normal;
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
@@ -652,9 +710,12 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             Quality::Normal => (),
         }
 
-        TimeMonitor {quality : quality, budget : budget,
+        TimeMonitor {quality, budget,
                     deadline : rel_deadline as u64,
                     expected_remaining_time : expected_remaining_time as u64,
+                    execution_time : start.to(PreciseTime::now()).num_microseconds().unwrap() as u64,
+                    callback_flags : flags,
+                    choosing_duration : choosing_duration.num_microseconds().unwrap() as u64,
                     nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
                 }
     }
