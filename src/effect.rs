@@ -885,7 +885,7 @@ mod tests {
         let mut missed_deadlines = 0;
 
         for _ in 0..1000 {
-            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 500.);
+            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 500., CallbackFlags::NO_FLAG);
             if times.budget < 0 {
                 missed_deadlines +=1;
             }
@@ -912,7 +912,7 @@ mod tests {
         let mut missed_deadlines = 0;
 
         for _ in 0..1000 {
-            let times = audio_graph.process_adaptive_exhaustive(buffer.as_mut_slice(), 44100, 2, 3000.);
+            let times = audio_graph.process_adaptive_exhaustive(buffer.as_mut_slice(), 44100, 2, 3000., CallbackFlags::NO_FLAG);
             if times.budget < 0 {
                 missed_deadlines+=1;
             }
@@ -939,7 +939,7 @@ mod tests {
         let mut missed_deadlines = 0;
 
         for _ in 0..1000 {
-            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 3000.);
+            let times = audio_graph.process_adaptive_progressive(buffer.as_mut_slice(), 44100, 2, 3000., CallbackFlags::NO_FLAG);
             if times.budget < 0 {
                 missed_deadlines += 1;
             }
