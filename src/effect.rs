@@ -445,6 +445,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             //println!("{} microseconds", rel_deadline as i64 - budget);
 
             let end = if resample {soundcard_size / 2} else {soundcard_size};
+            //if resample {println!("Resample: {} so end = {}", resample, end)};
 
             //Duplication, but not possible to put it in a method, as rust will complain about
             // self borrowed as immutable and mutable as the same time (as we need to modify some fields of self)
@@ -490,12 +491,21 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 Quality::Degraded => {
                     let start_time = PreciseTime::now();
 
-                    for connection in self.inputs(*index) {
-                        //TODO: crash here. Of course: buffer can be 2x connection.buffer
+                    let mut input_edges = self.inputs_mut(*index);
+                    while let Some(edge) = input_edges.next_edge(&self.graph) {
+                        // crashed here before. Of course: buffer can be 2x connection.buffer
                         // We need to check if it's inside a resampled branch and then
                         // mix to buffer[0..end]
-                        debug_assert_eq!(connection.weight().buffer.len(), buffer.len());
-                        mixer(buffer, &connection.weight().buffer);
+
+                        let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        if resample {
+                            connection.buffer.truncate(end);
+                        }
+                        else {
+                            connection.buffer.resize(soundcard_size, 0.);
+                        }
+                        debug_assert_eq!(connection.buffer.len(), end);
+                        mixer(&mut buffer[0..end], &connection.buffer);
                     }
 
                     {
@@ -506,21 +516,21 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     //Write buffer in the output edges
                     let mut edges = self.outputs_mut(*index);
+                    let mut to_resample_next_cycle = false;
                     while let Some(edge) = edges.next_edge(&self.graph) {
 
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
 
                         if connection.resample.get() && !resample {//It's the beginning of a degrading chain
                             println!("Starting degrading");
-                            resample = true;
+                            to_resample_next_cycle = true;
                             if !connection.resampled {//Should take about 11 microseconds
-                                debug_assert_eq!(connection.buffer.len(), buffer.len());
+                                //debug_assert_eq!(connection.buffer.len(), buffer.len());
                                 connection.resampled = true;
                                 connection.resampler.reset();
                                 connection.resampler.set_src_ratio_hard(0.5);
-                                connection.buffer.truncate(soundcard_size/ 2);
                             }
-
+                            connection.buffer.truncate(soundcard_size/ 2);
                             debug_assert_eq!(connection.buffer.len(), buffer.len() / 2);
                             //downsample
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
@@ -528,28 +538,34 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         }
                         else if !connection.resample.get() && resample {//The end of the chain
                             println!("Ending degrading");
-                            resample = false;
-                            if !connection.resampled {
-                                debug_assert_eq!(connection.buffer.len(), buffer.len());
+                            to_resample_next_cycle = false;
+                            if !connection.resampled {// before, it could have been a dowsampled connection!
+                                //debug_assert_eq!(connection.buffer.len(), buffer.len());
                                 connection.resampled = true;
                                 connection.resampler.reset();
                                 connection.resampler.set_src_ratio_hard(2.);
-                                connection.buffer.resize(soundcard_size, 0.);
                             }
+                            connection.buffer.resize(soundcard_size, 0.);
                             debug_assert_eq!(connection.buffer.len(), 2*end);
                             //upsample
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
                             connection.resample.set(false);
                         }
-                        else {//Buffers have same size
+                        else {
+                            if resample {
+                                connection.buffer.truncate(end);
+                            }
+                            else {
+                                connection.buffer.resize(soundcard_size, 0.);
+                            }
                             debug_assert_eq!(connection.buffer.len(), end);
-                            connection.resampled = false;//TODO: really?
+                            connection.resampled = false;//There is no resampler inserted here, juste maybe an already resampled signal
                             connection.buffer.copy_from_slice(&buffer[0..end]);
                         }
 
                     }
 
-
+                    resample = to_resample_next_cycle;
 
                     budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 }
@@ -580,7 +596,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         let mut expected_remaining_time = self.schedule_expected_time[0];
         let mut first_degraded_node : Option<u64> = None;
 
-        let mut choosing_duration = Duration::seconds(0);
+        let  choosing_duration = Duration::seconds(0);
         let mut quality = Quality::Normal;
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
