@@ -25,6 +25,7 @@ const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
     Exhaustive,
     Progressive,
@@ -81,7 +82,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     thread::spawn(move || {
 
-        let mut f = File::create(format!("complex_graph_{}_{}.csv",time::now().rfc3339(), nb_oscillators)).expect("Impossible to report execution times");
+        let mut f = File::create(format!("complex_graph_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators)).expect("Impossible to report execution times");
 
         f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {

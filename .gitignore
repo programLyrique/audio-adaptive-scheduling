@@ -4,3 +4,5 @@ execution_audio
 experiments
 *.csv
 .DS_Store
+__pycache__
+
