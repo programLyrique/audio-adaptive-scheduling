@@ -67,12 +67,16 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
             }
         });
 
+
     if nb_oscillators <= 1000 {
         println!("Matrix of random graph: {:?}", rand_gen);
         println!("Random graph: {}", audio_graph);
     }
 
     audio_graph.update_schedule().expect("Cycle detected");
+
+    let nb_nodes = audio_graph.nb_active_nodes();
+    let nb_edges = audio_graph.nb_edges();
 
     let settings = try!(pa.default_output_stream_settings(audio_graph.nb_channels() as i32,
     SAMPLE_RATE, audio_graph.frames_per_buffer()));
@@ -83,7 +87,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
     thread::spawn(move || {
 
         let mut f = File::create(format!("complex_graph_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators)).expect("Impossible to report execution times");
-
+        f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
         f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
 

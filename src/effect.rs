@@ -185,6 +185,15 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             time_resampler : Stats::init(15.)}
     }
 
+    pub fn nb_nodes(&self) -> usize {
+        //Nb of active nodes
+        self.graph.node_count()
+    }
+
+    pub fn nb_edges(&self) -> usize {
+        self.graph.edge_count()
+    }
+
     pub fn nb_channels(&self) -> u32 {
         self.channels
     }
@@ -267,6 +276,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
 
         Ok(())
+    }
+
+    pub fn nb_active_nodes(&self) -> usize {
+        self.schedule.len()
     }
 
 
