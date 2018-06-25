@@ -25,10 +25,15 @@ const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
 
+enum Mode {
+    Exhaustive,
+    Progressive,
+}
+
 
 ///Launch a audio graph with nb_oscillators
 /// On my machine, 1500 - 1600 oscillators (1545...) seem to start entailing miss deadlines
-fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
+fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     let pa = try!(pa::PortAudio::new());
 
@@ -95,17 +100,19 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 
     });
 
+    //TODO: rather choose the closure (but have to use Box or impl trait)
     let callback = move |pa::OutputStreamCallbackArgs { buffer, frames : _frames , time, flags}| {
+            //time members are in seconds. We need to convert it to microseconds
+            let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
+            assert!(time.buffer_dac- time.current < 1.0);
+            let times = match mode {
+                Mode::Exhaustive => audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags)),
+                Mode::Progressive => audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags))
+            };
+            tx_monit.send(times).unwrap();
 
-        //time members are in seconds. We need to convert it to microseconds
-        let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
-        assert!(time.buffer_dac- time.current < 1.0);
-        //let times = audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline);
-        let times = audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags));
-        //audio_graph.process(buffer, SAMPLE_RATE as u32, CHANNELS as usize);
-        tx_monit.send(times).unwrap();
+            pa::Continue
 
-        pa::Continue
     };
 
     let mut stream = try!(pa.open_non_blocking_stream(settings, callback));
@@ -125,9 +132,15 @@ fn run(nb_oscillators : u32) -> Result<(), pa::Error> {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        println!("Usage: basic_example nb_oscillators");
+    if args.len() < 3 {
+        println!("Usage: basic_example [EX|PROG] nb_oscillators");
         exit(0);
     }
-    run(args[1].parse::<u32>().expect("Usage: basic_example nb_oscillators")).unwrap()
+    let mode = match args[1].as_str() {
+        "EX" => Mode::Exhaustive,
+        "PROG" => Mode::Progressive,
+         _ => {println!("Usage: basic_example [EX|PROG] nb_oscillators"); std::process::exit(1)}
+    };
+    let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [EX|PROG] nb_oscillators");
+    run(mode, nb_oscillators).unwrap()
 }
