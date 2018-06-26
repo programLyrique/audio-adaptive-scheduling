@@ -1,7 +1,7 @@
 //! To generate random acyclic directed graphs
 //! with random effects and test the adaptive scheduling algorithm on it
 
-use rand::{Rng,SeedableRng, StdRng};
+use rand::{Rng,SeedableRng, StdRng, thread_rng, ThreadRng};
 use std::hash::Hash;
 
 use effect::*;
@@ -20,13 +20,13 @@ pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
     //Give a function that generates an audio node as argument, maybe.
     // Or a vector of possible nodes?
     // Depending on the topology of the graph?
-    fn generate(&mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T>;
+    fn generate(&mut self, node : &Fn(NodeClass, &mut ThreadRng) -> T) -> AudioGraph<T>;
     //fn generate(&mut self) -> AudioGraph<DspNode>;
 }
 
 
 pub struct RandomGenerator {
-    rng : StdRng,
+    rng : ThreadRng,
     adjacency_matrix : Vec<Vec<bool>>
 }
 
@@ -39,7 +39,8 @@ impl fmt::Debug for RandomGenerator {
 impl RandomGenerator {
     pub fn new(size : usize) -> RandomGenerator {
         let seed : &[_] = &[1, 21, 37, 4];
-        let rng : StdRng = SeedableRng::from_seed(seed);
+        //let rng : StdRng = SeedableRng::from_seed(seed);
+        let rng = thread_rng();
         RandomGenerator {
             rng : rng,
             adjacency_matrix : vec![Vec::with_capacity(size); size]
@@ -58,7 +59,7 @@ impl RandomGenerator {
 }
 
 impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for RandomGenerator {
-    fn generate(&mut self, node : &Fn(NodeClass, &mut StdRng) -> T) -> AudioGraph<T> {
+    fn generate(&mut self, node : &Fn(NodeClass, &mut ThreadRng) -> T) -> AudioGraph<T> {
         //Gen low triangular matrix
         self.gen_matrix();
 
