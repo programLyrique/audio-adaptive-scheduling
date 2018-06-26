@@ -3,6 +3,7 @@
 """
 This script agregates and analyzes the results of the experiments launched by experiments.py
 
+theformatting of the final tsv file is done by another script, format.py
 """
 import sys
 import os
