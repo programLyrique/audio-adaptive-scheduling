@@ -64,6 +64,7 @@ for (nN, mode),result in tqdm(results.items()):
     assert result["nbNodes"][0] == nN
     res["nbNodes"] = result["nbNodes"][0]
     res["Mode"] = mode
+    # Mean of choosing duration should be computed on only degraded cycles!!
     for columnName in columnNames1:
         res["mean" + columnName] = result[uncapitalize(columnName)].mean()
         res["std"+ columnName] = result[uncapitalize(columnName)].std(ddof=1)
