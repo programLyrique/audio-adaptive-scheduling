@@ -23,7 +23,9 @@ for name in ["NO_FLAG", "INPUT_UNDERFLOW", "INPUT_OVERFLOW", "OUTPUT_UNDERFLOW",
     flags_to_num[name] = i
     i += 1
 
-columnNames = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime", "ChoosingDuration"]
+columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime"]
+columnNames2 = ["ChoosingDuration"]
+columnNames = columnNames1 + columnNames2
 meanNames = ["mean"+s for s in columnNames]
 stdNames = ["std"+s for s in columnNames]
 fieldnames = ["nbCycles", "notDegraded", "nbNodes", "nbEdges"] + [val for pair in zip(meanNames, stdNames) for val in pair]
@@ -59,9 +61,13 @@ def launch_experiments(mode, nbNodes, nbRuns):
         result={}
 
 
-        for columnName in columnNames:
+        for columnName in columnNames1:
             result["mean" + columnName] = data[columnName].mean()
             result["std" + columnName] =data[columnName].std(ddof=1)
+        for columName in columnNames2:
+            degraded_ones = data[columName][np.nonzero(data[columName])]
+            result["mean" + columnName] = degraded_ones.mean()
+            result["std" + columName] = degraded_ones.std(ddof=1)
 
         result["nbCycles"] = nbCycles
         result["nbNodes"] = nbActualNodes
@@ -87,7 +93,8 @@ os.chdir(baseFolder)
 # Nb runs per config (mode, nbNodes)
 nbRuns = int(sys.argv[2])
 
-programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
+#programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
+programPath= "~/Ircam/audiographs/audio-adaptive-scheduling/target/release/complex_graph "
 
 #nbNodes = [10, 100, 1000]
 nbNodes = [10, 100, 200, 300, 350, 400, 1000]

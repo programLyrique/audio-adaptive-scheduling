@@ -15,9 +15,10 @@ from datetime import timedelta
 import csv
 from collections import defaultdict
 
-columnNames2 = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime", "ChoosingDuration"]
-columnNames1 = ["NbCycles", "NotDegraded", "nbEdges",]
-columnNames =  columnNames1 + columnNames2
+columnNames2 = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime", ]
+columnNames1 = ["NbCycles", "NotDegraded", "nbEdges"]
+columnNames3 = ["ChoosingDuration"]
+columnNames =  columnNames1 + columnNames2 + columnNames3
 meanNames = ["mean"+s for s in columnNames]
 stdNames = ["std"+s for s in columnNames]
 fieldnames = ["nbNodes", "Mode"] + [val for pair in zip(meanNames, stdNames) for val in pair]
@@ -70,6 +71,9 @@ for (nN, mode),result in tqdm(results.items()):
         res["std"+ columnName] = result[uncapitalize(columnName)].std(ddof=1)
     for columnName in columnNames2:
         res["mean"+columnName] = np.average(result["mean"+columnName], weights=cycles)
+        res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
+    for columnName in columnNames3:
+        res["mean"+columnName] = np.average(result["mean"+columnName], weights=result["nbCycles"]-result["NotDegraded"])
         res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
     results2.append(res)
 

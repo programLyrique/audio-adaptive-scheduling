@@ -129,6 +129,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     try!(stream.stop());
     try!(stream.close());
+    thread::sleep(sleep_duration / 2);//To give time to the monitoring infos to be written
 
     Ok(())
 }
