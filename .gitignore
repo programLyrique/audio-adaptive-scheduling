@@ -5,4 +5,4 @@ experiments
 *.csv
 .DS_Store
 __pycache__
-experiments2
+experiments*

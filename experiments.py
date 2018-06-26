@@ -89,7 +89,8 @@ nbRuns = int(sys.argv[2])
 
 programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
 
-nbNodes = [10, 100, 1000]
+#nbNodes = [10, 100, 1000]
+nbNodes = [10, 100, 200, 300, 350, 400, 1000]
 
 print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " runs per experiment #####\n")
 
