@@ -73,7 +73,7 @@ for (nN, mode),result in tqdm(results.items()):
         res["mean"+columnName] = np.average(result["mean"+columnName], weights=cycles)
         res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
     for columnName in columnNames3:
-        res["mean"+columnName] = np.average(result["mean"+columnName], weights=result["nbCycles"]-result["NotDegraded"])
+        res["mean"+columnName] = np.average(result["mean"+columnName], weights=result["nbCycles"]-result["notDegraded"])
         res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
     results2.append(res)
 
