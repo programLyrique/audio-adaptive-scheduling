@@ -65,6 +65,7 @@ for (nN, mode),result in tqdm(results.items()):
     assert result["nbNodes"][0] == nN
     res["nbNodes"] = result["nbNodes"][0]
     res["Mode"] = mode
+    w = result["nbCycles"]-result["notDegraded"]
     # Mean of choosing duration should be computed on only degraded cycles!!
     for columnName in columnNames1:
         res["mean" + columnName] = result[uncapitalize(columnName)].mean()
@@ -73,8 +74,12 @@ for (nN, mode),result in tqdm(results.items()):
         res["mean"+columnName] = np.average(result["mean"+columnName], weights=cycles)
         res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
     for columnName in columnNames3:
-        res["mean"+columnName] = np.average(result["mean"+columnName], weights=result["nbCycles"]-result["notDegraded"])
-        res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
+        if np.count_nonzero(w) > 0:
+            res["mean"+columnName] = np.average(result["mean"+columnName], weights=w)
+            res["std"+columnName] = np.sqrt(np.sum(np.square(result["std"+columnName])))
+        else:
+            res["mean"+columnName] = 0
+            res["std"+columnName] = 0
     results2.append(res)
 
 

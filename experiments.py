@@ -93,8 +93,8 @@ os.chdir(baseFolder)
 # Nb runs per config (mode, nbNodes)
 nbRuns = int(sys.argv[2])
 
-#programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
-programPath= "~/Ircam/audiographs/audio-adaptive-scheduling/target/release/complex_graph "
+programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
+#programPath= "~/Ircam/audiographs/audio-adaptive-scheduling/target/release/complex_graph "
 
 #nbNodes = [10, 100, 1000]
 nbNodes = [10, 100, 200, 300, 350, 400, 1000]
