@@ -27,6 +27,7 @@ pub trait GraphGenerator<T : Copy + fmt::Display + AudioEffect + Eq > {
 
 pub struct RandomGenerator {
     rng : ThreadRng,
+    p: f64,//probability of getting an edge
     adjacency_matrix : Vec<Vec<bool>>
 }
 
@@ -37,12 +38,13 @@ impl fmt::Debug for RandomGenerator {
 }
 
 impl RandomGenerator {
-    pub fn new(size : usize) -> RandomGenerator {
+    pub fn new(size : usize, p : f64) -> RandomGenerator {
         let seed : &[_] = &[1, 21, 37, 4];
         //let rng : StdRng = SeedableRng::from_seed(seed);
         let rng = thread_rng();
         RandomGenerator {
-            rng : rng,
+            rng,
+            p,
             adjacency_matrix : vec![Vec::with_capacity(size); size]
         }
     }
@@ -52,8 +54,12 @@ impl RandomGenerator {
         for (i,row) in self.adjacency_matrix.iter_mut().enumerate() {
             row.resize(i,false);
             for column in row[0..i].iter_mut() {
-                *column = self.rng.gen()
+                *column = self.rng.gen_bool(self.p)
+                //gen_bool to change the probability of getting a link? The proportion of edges
+                //Or use sample_slice? sample_iter? sample_slice_ref?
+                //Or with a more complex distribution? Normal? gen_bool = Bernoulli...
             }
+
         }
     }
 }

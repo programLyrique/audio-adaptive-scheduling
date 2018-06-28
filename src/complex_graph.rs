@@ -55,7 +55,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     println!("==== Generation of random graph ====", );
 
-    let mut rand_gen = RandomGenerator::new(nb_oscillators as usize);
+    let mut rand_gen = RandomGenerator::new(nb_oscillators as usize, 0.5);
 
     let mut audio_graph = rand_gen.generate(& |c, rng|
         {
