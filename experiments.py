@@ -35,9 +35,9 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     os.chdir(folderName)
     print("Experiment in mode ", mode, " with ", nbNodes, " nodes ", end='')
     if nbRuns > 0:
-        print("with with ", nbRuns, "runs")
+        print("with ", nbRuns)
         for i in trange(nbRuns):
-            subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge),  stdout=subprocess.DEVNULL, shell=True)
+            subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge) + " 2>> errors.txt",  stdout=subprocess.DEVNULL, shell=True)
             #subprocess.run(programPath + " " + mode + " " + str(nbNodes), check=True, stdout=subprocess.DEVNULL, shell=True)
     else:
         print("without runs: reusing results from previous invocation")
