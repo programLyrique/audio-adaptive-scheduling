@@ -34,7 +34,7 @@ enum Mode {
 
 ///Launch a audio graph with nb_oscillators
 /// On my machine, 1500 - 1600 oscillators (1545...) seem to start entailing miss deadlines
-fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
+fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Error> {
 
     let pa = try!(pa::PortAudio::new());
 
@@ -55,7 +55,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     println!("==== Generation of random graph ====", );
 
-    let mut rand_gen = RandomGenerator::new(nb_oscillators as usize, 0.5);
+    let mut rand_gen = RandomGenerator::new(nb_oscillators as usize, proba_edge);
 
     let mut audio_graph = rand_gen.generate(& |c, rng|
         {
@@ -86,16 +86,17 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     thread::spawn(move || {
 
-        let mut f = File::create(format!("complex_graph_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators)).expect("Impossible to report execution times");
+        let mut f = File::create(format!("complex_graph_{}_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators, proba_edge)).expect("Impossible to report execution times");
         f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
-        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
+        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tNbResamplers\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
 
-            let seria = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:?}\n", monitoring_infos.quality,
+            let seria = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:?}\n", monitoring_infos.quality,
                                             monitoring_infos.budget,
                                             monitoring_infos.expected_remaining_time,
                                             monitoring_infos.deadline,
                                             monitoring_infos.nb_degraded,
+                                            monitoring_infos.nb_resamplers,
                                             monitoring_infos.execution_time,
                                             monitoring_infos.choosing_duration,
                                             monitoring_infos.callback_flags);
@@ -129,7 +130,7 @@ fn run(mode : Mode, nb_oscillators : u32) -> Result<(), pa::Error> {
 
     try!(stream.stop());
     try!(stream.close());
-    thread::sleep(sleep_duration / 2);//To give time to the monitoring infos to be written
+    thread::sleep(sleep_duration / NUM_SECONDS as u32);//To give time to the monitoring infos to be written
 
     Ok(())
 }
@@ -139,14 +140,29 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        println!("Usage: basic_example [EX|PROG] nb_oscillators");
+        println!("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]");
         exit(0);
     }
     let mode = match args[1].as_str() {
         "EX" => Mode::Exhaustive,
         "PROG" => Mode::Progressive,
-         _ => {println!("Usage: basic_example [EX|PROG] nb_oscillators"); std::process::exit(1)}
+         _ => {println!("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]"); std::process::exit(1)}
     };
-    let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [EX|PROG] nb_oscillators");
-    run(mode, nb_oscillators).unwrap()
+    let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]");
+
+    let proba_edge = if args.len() == 4 {
+        let res = args[3].parse::<f64>().expect("proba_edge must a floatin point number");
+        if 0. <= res && res <= 1. {
+            res
+        }
+        else {
+            eprintln!("proba_edge must be in [0,1]");
+            exit(1)
+        }
+    }
+    else {
+        0.5
+    };
+
+    run(mode, nb_oscillators, proba_edge).unwrap()
 }

@@ -17,14 +17,8 @@ import csv
 from collections import defaultdict
 
 
-flags_to_num = {}
-i = 0
-for name in ["NO_FLAG", "INPUT_UNDERFLOW", "INPUT_OVERFLOW", "OUTPUT_UNDERFLOW", "OUTPUT_OVERFLOW", "PRIMING_OUTPUT"]:
-    flags_to_num[name] = i
-    i += 1
-
 columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime"]
-columnNames2 = ["ChoosingDuration"]
+columnNames2 = ["ChoosingDuration", "NbResamplers"]
 columnNames = columnNames1 + columnNames2
 meanNames = ["mean"+s for s in columnNames]
 stdNames = ["std"+s for s in columnNames]
@@ -33,13 +27,13 @@ fieldnames = ["nbCycles", "notDegraded", "nbNodes", "nbEdges"] + [val for pair i
 # value: a list with all the values
 
 
-def launch_experiments(mode, nbNodes, nbRuns):
+def launch_experiments(mode, nbNodes, nbRuns, proba_edge):
     folderName = str(nb)+mode
     os.makedirs(folderName, exist_ok=True)
     os.chdir(folderName)
     print("Experiment in mode ", mode, " with ", nbNodes, " nodes with ", nbRuns, "runs")
     for i in trange(nbRuns):
-        subprocess.run(programPath + " " + mode + " " + str(nbNodes),  stdout=subprocess.DEVNULL, shell=True)
+        subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge),  stdout=subprocess.DEVNULL, shell=True)
         #subprocess.run(programPath + " " + mode + " " + str(nbNodes), check=True, stdout=subprocess.DEVNULL, shell=True)
 
     print("Analyzing")
@@ -76,7 +70,7 @@ def launch_experiments(mode, nbNodes, nbRuns):
         results.append(result)
 
     os.chdir("..")
-    print("Writing results")
+    print("Writing results in ", folderName)
     with open(folderName+".tsv", 'w') as tsvfile:
         writer = csv.DictWriter(tsvfile, fieldnames,dialect="excel-tab")
         writer.writeheader()
@@ -84,6 +78,8 @@ def launch_experiments(mode, nbNodes, nbRuns):
             writer.writerow(result)
     print("Done")
 
+if len(sys.argv) < 3:
+    print("Usage: experiments.py destinationFolder nbRuns [proba_edge]")
 # Prepare folder for experiments
 # Must be in the base directory of the source
 baseFolder = sys.argv[1]
@@ -93,15 +89,19 @@ os.chdir(baseFolder)
 # Nb runs per config (mode, nbNodes)
 nbRuns = int(sys.argv[2])
 
-programPath= "/Users/pierre/Documents/Salzburg/audio_adaptive_scheduling/target/release/complex_graph "
-#programPath= "~/Ircam/audiographs/audio-adaptive-scheduling/target/release/complex_graph "
+proba_edge = 0.5
+if len(sys.argv) == 3:
+    proba_edge = float(sys.argv[3])
+
+programPath="audio_adaptive_scheduling/target/release/complex_graph"
 
 #nbNodes = [10, 100, 1000]
-nbNodes = [10, 100, 200, 300, 350, 400, 1000]
+#nbNodes = [10, 100, 200, 300, 350, 400, 1000]
+nbNodes = [10, 100, 500]
 
 print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " runs per experiment #####\n")
 
 # Launch experiments
 for nb in nbNodes:
-    launch_experiments("EX", nb, nbRuns)
-    launch_experiments("PROG", nb, nbRuns)
+    launch_experiments("EX", nb, nbRuns, proba_edge)
+    launch_experiments("PROG", nb, nbRuns, proba_edge)

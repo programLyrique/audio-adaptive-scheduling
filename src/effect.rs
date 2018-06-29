@@ -117,6 +117,7 @@ pub struct TimeMonitor {
     pub execution_time : u64,
     ///Number of degraded effects
     pub nb_degraded : u64,
+    pub nb_resamplers : u64,//Number of inserted resamplers
     pub callback_flags : CallbackFlags,
     ///Duration taken to compute the degradation
     pub choosing_duration : u64,
@@ -425,6 +426,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
         let start = PreciseTime::now();
         let mut choosing_duration = Duration::seconds(0);
+        let mut nb_resamplers=0;//Nb of inserted resamplers
 
         self.update_remaining_times();//from 5-6 µs, to 36µs (300 elements), and 420µs for 30000 nodes
 
@@ -438,7 +440,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         let mut resample = false;
 
         for (i,index) in self.schedule.iter().enumerate() {
-
+            #[cfg(debuger_Assertions)]
             println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
 
             //We won't perform another analysis on quality once we are in the degraded mode
@@ -535,6 +537,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
 
                         if connection.resample.get() && !resample {//It's the beginning of a degrading chain
+                            #[cfg(debuger_Assertions)]
                             println!("Starting degrading");
                             to_resample_next_cycle = true;
                             if !connection.resampled {//Should take about 11 microseconds
@@ -547,9 +550,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             debug_assert_eq!(connection.buffer.len(), buffer.len() / 2);
                             //downsample
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            nb_resamplers += 1;
                             connection.resample.set(false);
                         }
                         else if !connection.resample.get() && resample {//The end of the chain
+                            #[cfg(debuger_Assertions)]
                             println!("Ending degrading");
                             to_resample_next_cycle = false;
                             if !connection.resampled {// before, it could have been a dowsampled connection!
@@ -562,6 +567,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             debug_assert_eq!(connection.buffer.len(), 2*end);
                             //upsample
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
+                            nb_resamplers += 1;
                             connection.resample.set(false);
                         }
                         else {
@@ -591,6 +597,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     expected_remaining_time : expected_remaining_time as u64,
                     execution_time : start.to(PreciseTime::now()).num_microseconds().unwrap() as u64,
                     callback_flags : flags,
+                    nb_resamplers,
                     choosing_duration : choosing_duration.num_microseconds().unwrap() as u64,
                     nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
                 }
@@ -610,11 +617,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         let mut first_degraded_node : Option<u64> = None;
 
         let  choosing_duration = Duration::seconds(0);
+        let mut nb_resamplers = 0;
         let mut quality = Quality::Normal;
 
         budget -= start.to(PreciseTime::now()).num_microseconds().unwrap();
 
         for (i,index) in self.schedule.iter().enumerate() {
+            #[cfg(debuger_Assertions)]
             println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
             let start_time = PreciseTime::now();
             //We won't perform another analysis on quality once we are in the degraded mode
@@ -625,6 +634,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 } else {
                     expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i];
                     first_degraded_node = Some(i as u64);
+                    #[cfg(debuger_Assertions)]
                     println!("Start degrading");
                     Quality::Degraded
                 },
@@ -685,6 +695,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             connection.resample.set(false);//Set to false for the next cycle
                         }
                         else {
+                            #[cfg(debuger_Assertions)]
                             println!("Starting to degrade quality");
 
                             if !connection.resampled {
@@ -694,6 +705,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             }
                             connection.resampled = true;
                             connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            nb_resamplers +=1;
+                            //TODO: rather mix all the ones that have not been resampled yet. Resample them. Will be more efficient
                             mixer(&mut buffer[0..end], &connection.buffer[0..end]);
                         }
                     }
@@ -724,6 +737,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         //If the quality has been degraded, in this version, we only upsample at the end, after the last node
         match quality {
             Quality::Degraded => {
+                #[cfg(debuger_Assertions)]
                 println!("Ending degradation");
                 let start_time = PreciseTime::now();
                 if !self.sink.resampled {
@@ -733,6 +747,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 }
 
                 self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
+                nb_resamplers += 1;
                 buffer.copy_from_slice(&self.sink.buffer);
                 budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
             },
@@ -744,6 +759,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     expected_remaining_time : expected_remaining_time as u64,
                     execution_time : start.to(PreciseTime::now()).num_microseconds().unwrap() as u64,
                     callback_flags : flags,
+                    nb_resamplers,
                     choosing_duration : choosing_duration.num_microseconds().unwrap() as u64,
                     nb_degraded : first_degraded_node.map_or(0, |n| self.schedule.len() as u64 - n)
                 }
