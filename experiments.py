@@ -17,13 +17,14 @@ import csv
 from collections import defaultdict
 
 
-columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "NbDegradedNodes", "ExecutionTime"]
-columnNames2 = ["ChoosingDuration", "NbResamplers"]
-columnNames3 = ["NbCycles", "NbDegraded", "NbEdges"]
-columnNames = columnNames1 + columnNames2 + columnNames3
+columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "ExecutionTime"]
+columnNames2 = ["ChoosingDuration", "NbResamplers", "NbDegradedNodes"]
+columnNames3 = ["NbCycles", "NbDegradedCycles", "NbEdges"]
+columnNames = columnNames3 + columnNames1 + columnNames2
 meanNames = ["mean"+s for s in columnNames]
 stdNames = ["std"+s for s in columnNames]
 fieldnames = ["nbNodes", "Mode"] + [val for pair in zip(meanNames, stdNames) for val in pair]
+
 # key: (nbNodes, mode)
 # value: a list with all the values
 
@@ -42,6 +43,7 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     else:
         print("without runs: reusing results from previous invocation")
 
+    # TODO: ratehr do that as a 3rd phase? So that it's possible to relaunch experiments and have them included
     results=[]
     files= glob.glob("complex_graph*.csv")
     print("Collating results")
@@ -56,29 +58,34 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
             nbActualEdges = int(line1[1])
         nbCycles = data.size #data should be 1D (each element is a dictionary)
         degraded = nbCycles -np.count_nonzero(data["Quality"])
-        ag_results[(mode, nbNodes)].append((data, nbActualEdges, nbCycles, degraded))
+        ag_results[(nbNodes, mode)].append((data, nbActualEdges, nbCycles, degraded))
     os.chdir("..")
 
 def agregate(ag_results):
     results = []
     print("Stats on results")
-    for (nN, mode),info in tqdm(ag_results.items()):
+    bar = tqdm(ag_results.items())
+    for (nN, mode),info in bar :
         res, nbEdges, nbCycles, degraded = zip(*info)
         #Concatenate all the ndarrays for this configuration
         data = np.concatenate(res)
 
         result={}
         for columnName in columnNames1:
+            bar.write(columnName)
             result["mean" + columnName] = data[columnName].mean(dtype=np.float64)
             result["std" + columnName] = data[columnName].std(dtype=np.float64,ddof=1)
-        for columName in columnNames2:
-            degraded_ones = data[columName][np.nonzero(data[columName])]
+        for columnName in columnNames2:
+            bar.write(columnName)
+            degraded_ones = data[columnName][np.nonzero(data[columnName])]
             if degraded_ones.size == 0:#If nothing is degraded, we say that the mean is 0
-                result["mean" + columName] = 0.
-                result["std" + columName] = 0.
+                result["mean" + columnName] = 0.
+                result["std" + columnName] = 0.
             else:
-                result["mean" + columnName] = degraded_ones.mean(dtype=np.float64)
-                result["std" + columName] = degraded_ones.std(dtype=np.float64, ddof=1)
+                result["mean" + columnName] = np.nanmean(degraded_ones, dtype=np.float64)
+                result["std" + columnName] = np.nanstd(degraded_ones, dtype=np.float64, ddof=1)
+
+        print(result["meanChoosingDuration"])
 
         nbCycles = np.array(nbCycles)
         result["meanNbCycles"] = nbCycles.mean(dtype=np.float64)
@@ -92,8 +99,8 @@ def agregate(ag_results):
         result["stdNbEdges"] = nbEdges.std(dtype=np.float64, ddof=1)
 
         degraded = np.array(degraded)
-        result["meanNbDegraded"] = degraded.mean(dtype=np.float64)
-        result["stdNbDegraded"] = degraded.std(dtype=np.float64, ddof=1)
+        result["meanNbDegradedCycles"] = degraded.mean(dtype=np.float64)
+        result["stdNbDegradedCycles"] = degraded.std(dtype=np.float64, ddof=1)
 
         results.append(result)
     return results
@@ -121,7 +128,7 @@ programPath="audio_adaptive_scheduling/target/release/complex_graph"
 #nbNodes = [10, 100, 1000]
 #nbNodes = [10, 100, 200, 300, 350, 400, 1000]
 #nbNodes = [10, 100, 300]
-nbNodes = [10]
+nbNodes = [10, 300]
 
 print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " runs per experiment #####\n")
 
