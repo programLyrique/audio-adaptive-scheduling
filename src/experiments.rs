@@ -129,7 +129,7 @@ mod tests {
         let size = 10;
 
         let generators = vec![DspNode::Modulator(5., 500, 1.0), DspNode::LowPass([5.,6.,7.,8.],200.,0.8)];
-        let mut rand_gen = RandomGenerator::new(size);
+        let mut rand_gen = RandomGenerator::new(size, 0.5);
         {
             let graph = rand_gen.generate(& |c, rng|
                 {
