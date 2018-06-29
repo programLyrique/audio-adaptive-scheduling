@@ -35,7 +35,7 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     os.chdir(folderName)
     print("Experiment in mode ", mode, " with ", nbNodes, " nodes ", end='')
     if nbRuns > 0:
-        print("with ", nbRuns)
+        print("with ", nbRuns, " runs")
         for i in trange(nbRuns):
             subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge) + " 2>> errors.txt",  stdout=subprocess.DEVNULL, shell=True)
             #subprocess.run(programPath + " " + mode + " " + str(nbNodes), check=True, stdout=subprocess.DEVNULL, shell=True)
@@ -44,6 +44,7 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
 
     results=[]
     files= glob.glob("complex_graph*.csv")
+    print("Collating results")
     for f in tqdm(files):
         #data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=[('Quality', '<i8'), ('Budget', '<i8'), ('ExpectRemainingTime', '<i8'), ('Deadline', '<i8'), ('NbNodes', '<i8'), ('ExecutionTime', '<i8'), ('ChoosingDuration', '<i8'), ('CallbackFlags', 'S16')], names=True)
         data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=None, names=True, skip_header=1)
@@ -119,8 +120,8 @@ programPath="audio_adaptive_scheduling/target/release/complex_graph"
 
 #nbNodes = [10, 100, 1000]
 #nbNodes = [10, 100, 200, 300, 350, 400, 1000]
-nbNodes = [10, 100, 300]
-#nbNodes = [10]
+#nbNodes = [10, 100, 300]
+nbNodes = [10]
 
 print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " runs per experiment #####\n")
 
