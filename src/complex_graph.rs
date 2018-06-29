@@ -88,7 +88,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
 
         let mut f = File::create(format!("complex_graph_{}_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators, proba_edge)).expect("Impossible to report execution times");
         f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
-        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbNodes\tNbResamplers\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
+        f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbDegradedNodes\tNbResamplers\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
 
             let seria = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:?}\n", monitoring_infos.quality,

@@ -17,26 +17,31 @@ import csv
 from collections import defaultdict
 
 
-columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "NbNodes", "ExecutionTime"]
+columnNames1 = ["Budget", "ExpectRemainingTime", "Deadline", "NbDegradedNodes", "ExecutionTime"]
 columnNames2 = ["ChoosingDuration", "NbResamplers"]
-columnNames = columnNames1 + columnNames2
+columnNames3 = ["NbCycles", "NbDegraded", "NbEdges"]
+columnNames = columnNames1 + columnNames2 + columnNames3
 meanNames = ["mean"+s for s in columnNames]
 stdNames = ["std"+s for s in columnNames]
-fieldnames = ["nbCycles", "notDegraded", "nbNodes", "nbEdges"] + [val for pair in zip(meanNames, stdNames) for val in pair]
+fieldnames = ["nbNodes", "Mode"] + [val for pair in zip(meanNames, stdNames) for val in pair]
 # key: (nbNodes, mode)
 # value: a list with all the values
 
+agregate_results = defaultdict(list)
 
-def launch_experiments(mode, nbNodes, nbRuns, proba_edge):
+def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     folderName = str(nb)+mode
     os.makedirs(folderName, exist_ok=True)
     os.chdir(folderName)
-    print("Experiment in mode ", mode, " with ", nbNodes, " nodes with ", nbRuns, "runs")
-    for i in trange(nbRuns):
-        subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge),  stdout=subprocess.DEVNULL, shell=True)
-        #subprocess.run(programPath + " " + mode + " " + str(nbNodes), check=True, stdout=subprocess.DEVNULL, shell=True)
+    print("Experiment in mode ", mode, " with ", nbNodes, " nodes ", end='')
+    if nbRuns > 0:
+        print("with with ", nbRuns, "runs")
+        for i in trange(nbRuns):
+            subprocess.run(os.path.join(os.path.dirname(sys.path[0]), programPath) + " " + mode + " " + str(nbNodes) + " " + str(proba_edge),  stdout=subprocess.DEVNULL, shell=True)
+            #subprocess.run(programPath + " " + mode + " " + str(nbNodes), check=True, stdout=subprocess.DEVNULL, shell=True)
+    else:
+        print("without runs: reusing results from previous invocation")
 
-    print("Analyzing")
     results=[]
     files= glob.glob("complex_graph*.csv")
     for f in tqdm(files):
@@ -46,40 +51,57 @@ def launch_experiments(mode, nbNodes, nbRuns, proba_edge):
         nbActualEdges=-1
         with open(f, "r") as datafile:
             line1 = datafile.readline().split(' ')
-            nbActualNodes = int(line1[0])
+            nbActualNodes = int(line1[0]) #Always equal to nbNodes byconstruction of the random graph
             nbActualEdges = int(line1[1])
-
         nbCycles = data.size #data should be 1D (each element is a dictionary)
-        notDegraded = np.count_nonzero(data["Quality"])
+        degraded = nbCycles -np.count_nonzero(data["Quality"])
+        ag_results[(mode, nbNodes)].append((data, nbActualEdges, nbCycles, degraded))
+    os.chdir("..")
+
+def agregate(ag_results):
+    results = []
+    print("Stats on results")
+    for (nN, mode),info in tqdm(ag_results.items()):
+        res, nbEdges, nbCycles, degraded = zip(*info)
+        #Concatenate all the ndarrays for this configuration
+        data = np.concatenate(res)
 
         result={}
-
-
         for columnName in columnNames1:
-            result["mean" + columnName] = data[columnName].mean()
-            result["std" + columnName] =data[columnName].std(ddof=1)
+            result["mean" + columnName] = data[columnName].mean(dtype=np.float64)
+            result["std" + columnName] = data[columnName].std(dtype=np.float64,ddof=1)
         for columName in columnNames2:
             degraded_ones = data[columName][np.nonzero(data[columName])]
-            result["mean" + columnName] = degraded_ones.mean()
-            result["std" + columName] = degraded_ones.std(ddof=1)
+            if degraded_ones.size == 0:#If nothing is degraded, we say that the mean is 0
+                result["mean" + columName] = 0.
+                result["std" + columName] = 0.
+            else:
+                result["mean" + columnName] = degraded_ones.mean(dtype=np.float64)
+                result["std" + columName] = degraded_ones.std(dtype=np.float64, ddof=1)
 
-        result["nbCycles"] = nbCycles
-        result["nbNodes"] = nbActualNodes
-        result["nbEdges"] = nbActualEdges
-        result["notDegraded"] = notDegraded
+        nbCycles = np.array(nbCycles)
+        result["meanNbCycles"] = nbCycles.mean(dtype=np.float64)
+        result["stdNbCycles"] = nbCycles.std(dtype=np.float64, ddof=1)
+
+        result["nbNodes"] = nN
+        result["Mode"] = mode
+
+        nbEdges= np.array(nbEdges)
+        result["meanNbEdges"] = nbEdges.mean(dtype=np.float64)
+        result["stdNbEdges"] = nbEdges.std(dtype=np.float64, ddof=1)
+
+        degraded = np.array(degraded)
+        result["meanNbDegraded"] = degraded.mean(dtype=np.float64)
+        result["stdNbDegraded"] = degraded.std(dtype=np.float64, ddof=1)
+
         results.append(result)
+    return results
 
-    os.chdir("..")
-    print("Writing results in ", folderName)
-    with open(folderName+".tsv", 'w') as tsvfile:
-        writer = csv.DictWriter(tsvfile, fieldnames,dialect="excel-tab")
-        writer.writeheader()
-        for result in tqdm(results):
-            writer.writerow(result)
-    print("Done")
+
 
 if len(sys.argv) < 3:
     print("Usage: experiments.py destinationFolder nbRuns [proba_edge]")
+    print("\tif nbRuns <= 0, uses the csv already computed")
 # Prepare folder for experiments
 # Must be in the base directory of the source
 baseFolder = sys.argv[1]
@@ -97,11 +119,22 @@ programPath="audio_adaptive_scheduling/target/release/complex_graph"
 
 #nbNodes = [10, 100, 1000]
 #nbNodes = [10, 100, 200, 300, 350, 400, 1000]
-nbNodes = [10, 100, 500]
+nbNodes = [10, 100, 300]
+#nbNodes = [10]
 
 print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " runs per experiment #####\n")
 
 # Launch experiments
 for nb in nbNodes:
-    launch_experiments("EX", nb, nbRuns, proba_edge)
-    launch_experiments("PROG", nb, nbRuns, proba_edge)
+    launch_experiments(agregate_results, "EX", nb, nbRuns, proba_edge)
+    launch_experiments(agregate_results, "PROG", nb, nbRuns, proba_edge)
+
+results = agregate(agregate_results)
+results.sort(key=lambda res : res["nbNodes"])
+
+print("Writing final result file")
+with open(baseFolder+".tsv", 'w') as tsvfile:
+    writer = csv.DictWriter(tsvfile, fieldnames,dialect="excel-tab")
+    writer.writeheader()
+    for result in tqdm(results):
+        writer.writerow(result)
