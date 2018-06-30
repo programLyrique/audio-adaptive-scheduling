@@ -138,6 +138,7 @@ pub struct AudioGraph<T : Copy + AudioEffect + fmt::Display + Eq> {
     time_input : Stats, //Mean time to populate one input connection
     time_output : Stats,//Mean time to populate one output connection
     time_resampler : Stats,//Time to upsample/downsample
+    temp_buffer: Vec<f32>,//Used for mixing in the exhaustive strategy
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -183,7 +184,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             time_nodes : vec![Stats::new();T::nb_effects()],
             time_input : Stats::new(),
             time_output : Stats::new(),
-            time_resampler : Stats::init(15.)}
+            time_resampler : Stats::init(15.),
+            temp_buffer : Vec::with_capacity(size)
+        }
     }
 
     pub fn nb_nodes(&self) -> usize {
@@ -549,7 +552,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             connection.buffer.truncate(soundcard_size/ 2);
                             debug_assert_eq!(connection.buffer.len(), buffer.len() / 2);
                             //downsample
-                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            let duration  = Duration::span(|| {
+                                connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                             }).num_microseconds().unwrap();
+                            self.time_resampler.update(duration as f64);
+
                             nb_resamplers += 1;
                             connection.resample.set(false);
                         }
@@ -566,7 +573,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             connection.buffer.resize(soundcard_size, 0.);
                             debug_assert_eq!(connection.buffer.len(), 2*end);
                             //upsample
-                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
+                            let duration  = Duration::span(|| {
+                                connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Upsampling failed.");
+                             }).num_microseconds().unwrap();
+                            self.time_resampler.update(duration as f64);
                             nb_resamplers += 1;
                             connection.resample.set(false);
                         }
@@ -687,6 +697,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 Quality::Degraded => {
                     //Incoming edges
                     let mut edges = self.inputs_mut(*index);
+                    //prepare temp buffer. Not fill function in rust...
+                    self.temp_buffer.clear();//Does not touch the allocated memo
+                    self.temp_buffer.resize(end, 0.0);
                     while let Some(edge) = edges.next_edge(&self.graph) {
 
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
@@ -704,10 +717,13 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                                 connection.buffer.truncate(end);
                             }
                             connection.resampled = true;
-                            connection.resampler.resample(buffer, connection.buffer.as_mut_slice()).expect("Downsampling failed.");
+                            let time_here = PreciseTime::now();//Not with Duration::span, otherwise problems with borrowing
+                            connection.resampler.resample(connection.buffer.as_slice(), &mut self.temp_buffer[0..end]).expect("Downsampling failed.");
+                            self.time_resampler.update_time(time_here);
+
                             nb_resamplers +=1;
                             //TODO: rather mix all the ones that have not been resampled yet. Resample them. Will be more efficient
-                            mixer(&mut buffer[0..end], &connection.buffer[0..end]);
+                            mixer(&mut buffer[0..end], &self.temp_buffer[0..end]);
                         }
                     }
 
@@ -745,8 +761,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     self.sink.resampler.set_src_ratio_hard(2.0);
                     self.sink.resampled = true;
                 }
+                let duration  = Duration::span(|| {
+                    self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
+                 }).num_microseconds().unwrap();
+                self.time_resampler.update(duration as f64);
 
-                self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
                 nb_resamplers += 1;
                 buffer.copy_from_slice(&self.sink.buffer);
                 budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();

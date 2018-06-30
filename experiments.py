@@ -43,7 +43,7 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     else:
         print("without runs: reusing results from previous invocation")
 
-    # TODO: ratehr do that as a 3rd phase? So that it's possible to relaunch experiments and have them included
+    # TODO: rather do that as a 3rd phase? So that it's possible to relaunch experiments and have them included
     results=[]
     files= glob.glob("complex_graph*.csv")
     print("Collating results")
