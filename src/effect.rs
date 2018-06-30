@@ -752,26 +752,28 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
         }
         //If the quality has been degraded, in this version, we only upsample at the end, after the last node
-        match quality {
-            Quality::Degraded => {
-                #[cfg(debuger_Assertions)]
-                println!("Ending degradation");
-                let start_time = PreciseTime::now();
-                if !self.sink.resampled {
-                    self.sink.resampler.reset();
-                    self.sink.resampler.set_src_ratio_hard(2.0);
-                    self.sink.resampled = true;
-                }
-                let duration  = Duration::span(|| {
-                    self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
-                 }).num_microseconds().unwrap();
-                self.time_resampler.update(duration as f64);
+        if nb_resamplers > 0 { //we do not need to oversample if we did not downsample before!
+            match quality {
+                Quality::Degraded => {
+                    #[cfg(debuger_Assertions)]
+                    println!("Ending degradation");
+                    let start_time = PreciseTime::now();
+                    if !self.sink.resampled {
+                        self.sink.resampler.reset();
+                        self.sink.resampler.set_src_ratio_hard(2.0);
+                        self.sink.resampled = true;
+                    }
+                    let duration  = Duration::span(|| {
+                        self.sink.resampler.resample(buffer, self.sink.buffer.as_mut_slice()).expect("Upsampling just before sink node failed");
+                     }).num_microseconds().unwrap();
+                    self.time_resampler.update(duration as f64);
 
-                nb_resamplers += 1;
-                buffer.copy_from_slice(&self.sink.buffer);
-                budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
-            },
-            Quality::Normal => (),
+                    nb_resamplers += 1;
+                    buffer.copy_from_slice(&self.sink.buffer);
+                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
+                },
+                Quality::Normal => (),
+            }
         }
 
         TimeMonitor {quality, budget,
