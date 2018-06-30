@@ -651,6 +651,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 Quality::Degraded => () //TODO: Go back to normal if there is enough time budget
             };
 
+
             //Duplication, but not possible to put it in a method, as rust will complain about
             // self borrowed as immutable and mutable as the same time (as we need to modify some fields of self)
             match quality {
