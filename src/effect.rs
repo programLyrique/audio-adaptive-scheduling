@@ -446,6 +446,8 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             #[cfg(debuger_Assertions)]
             println!("Dealing with node {}", self.graph.node_weight(*index).unwrap());
 
+            let start_time = PreciseTime::now();
+
             //We won't perform another analysis on quality once we are in the degraded mode
             let time_update = PreciseTime::now();
             match quality {
@@ -476,7 +478,6 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                             mixer(buffer, &connection.weight().buffer)
                         }).num_microseconds().unwrap();
                         stats.update(duration as f64);
-                        budget -= duration;
                     }
                     self.time_input = stats;
 
@@ -488,7 +489,6 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         }).num_microseconds().unwrap();
 
                         self.time_nodes[node.id()].update(duration as f64);
-                        budget -= duration;
                     }
 
                     //Write buffer in the output edges
@@ -503,11 +503,10 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                         }).num_microseconds().unwrap();
 
                         self.time_output.update(duration as f64);
-                        budget -= duration;
                     }
                 },
                 Quality::Degraded => {
-                    let start_time = PreciseTime::now();
+
 
                     let mut input_edges = self.inputs_mut(*index);
                     while let Some(edge) = input_edges.next_edge(&self.graph) {
@@ -596,10 +595,9 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
 
                     resample = to_resample_next_cycle;
 
-                    budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
                 }
             }
-
+            budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
         }
 
         TimeMonitor {quality, budget,
@@ -697,36 +695,40 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                 },
                 Quality::Degraded => {
                     //Incoming edges
-                    let mut edges = self.inputs_mut(*index);
-                    //prepare temp buffer. Not fill function in rust...
-                    self.temp_buffer.clear();//Does not touch the allocated memo
-                    self.temp_buffer.resize(end, 0.0);
-                    while let Some(edge) = edges.next_edge(&self.graph) {
+                    if self.nb_inputs(*index) > 0 { //We resample the connections in that case
+                        //TODO Otherwise, we will simple resample the output edges.
+                        let mut edges = self.inputs_mut(*index);
+                        //prepare temp buffer. Not fill function in rust...
+                        self.temp_buffer.clear();//Does not touch the allocated memo
+                        self.temp_buffer.resize(end, 0.0);
+                        while let Some(edge) = edges.next_edge(&self.graph) {
 
-                        let connection = self.graph.edge_weight_mut(edge).unwrap();
-                        if connection.resample.get() {//Means that resampling has already been done previously on the chain
-                            mixer(&mut buffer[0..end], &connection.buffer[0..end]);
-                            connection.resample.set(false);//Set to false for the next cycle
-                        }
-                        else {
-                            #[cfg(debuger_Assertions)]
-                            println!("Starting to degrade quality");
-
-                            if !connection.resampled {
-                                connection.resampler.reset();
-                                connection.resampler.set_src_ratio_hard(0.5);
-                                connection.buffer.truncate(end);
+                            let connection = self.graph.edge_weight_mut(edge).unwrap();
+                            if connection.resample.get() {//Means that resampling has already been done previously on the chain
+                                mixer(&mut buffer[0..end], &connection.buffer[0..end]);
+                                connection.resample.set(false);//Set to false for the next cycle
                             }
-                            connection.resampled = true;
-                            let time_here = PreciseTime::now();//Not with Duration::span, otherwise problems with borrowing
-                            connection.resampler.resample(connection.buffer.as_slice(), &mut self.temp_buffer[0..end]).expect("Downsampling failed.");
-                            self.time_resampler.update_time(time_here);
+                            else {
+                                #[cfg(debuger_Assertions)]
+                                println!("Starting to degrade quality");
 
-                            nb_resamplers +=1;
-                            //TODO: rather mix all the ones that have not been resampled yet. Resample them. Will be more efficient
-                            mixer(&mut buffer[0..end], &self.temp_buffer[0..end]);
+                                if !connection.resampled {
+                                    connection.resampler.reset();
+                                    connection.resampler.set_src_ratio_hard(0.5);
+                                    connection.buffer.truncate(end);
+                                }
+                                connection.resampled = true;
+                                let time_here = PreciseTime::now();//Not with Duration::span, otherwise problems with borrowing
+                                connection.resampler.resample(connection.buffer.as_slice(), &mut self.temp_buffer[0..end]).expect("Downsampling failed.");
+                                self.time_resampler.update_time(time_here);
+
+                                nb_resamplers +=1;
+                                //TODO: rather mix all the ones that have not been resampled yet. Resample them. Will be more efficient
+                                mixer(&mut buffer[0..end], &self.temp_buffer[0..end]);
+                            }
                         }
                     }
+
 
                     //Node processing
                     {
