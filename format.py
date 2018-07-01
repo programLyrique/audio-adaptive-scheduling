@@ -17,7 +17,7 @@ from collections import defaultdict
 from operator import itemgetter, attrgetter
 
 # "ExpectRemainingTime"
-columnNames = ["NbCycles", "nbEdges", "Budget",  "Deadline", "NbNodes", "ExecutionTime", "ChoosingDuration"]
+columnNames = ["NbCycles", "NbEdges", "Budget",  "ExpectRemainingTime", "Deadline", "NbResamplers", "NbDegradedNodes", "ExecutionTime", "ChoosingDuration"]
 #meanNames = ["mean"+s for s in columnNames]
 #stdNames = ["std"+s for s in columnNames]
 fieldnames = ["nbNodes", "Mode", "Degraded"] + columnNames
@@ -43,7 +43,7 @@ for line in data:
         result["Mode"] = "TOT"
     else:
         result["Mode"] = "PROG"
-    result["Degraded"] = 100. * (nbCycles - line["meanNotDegraded"]) / float(nbCycles)
+    result["Degraded"] = 100. * line["meanNbDegradedCycles"] / float(nbCycles)
     results.append(result)
 
 results.sort(key=lambda res : res["nbNodes"])
