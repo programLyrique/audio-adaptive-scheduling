@@ -22,7 +22,7 @@ variables:
 # Use cargo to test the project
 test:cargo:
   before_script:
-    - apt-get install libsamplerate0-dev libsndfile1-dev
+    - apt-get update -qq && apt-get install -y -qq libsamplerate0-dev libsndfile1-dev
   script:
   - rustc --version && cargo --version      # Print version info for debugging
   - cargo test --all --verbose
