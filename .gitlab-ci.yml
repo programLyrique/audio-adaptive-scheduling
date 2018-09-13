@@ -25,6 +25,6 @@ test:cargo:
   - rustc --version && cargo --version      # Print version info for debugging
   - cargo test --all --verbose
   cache:
-  paths:
-    - target/
-    - cargo/
+    paths:
+      - target/
+      - cargo/
