@@ -268,7 +268,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
         self.schedule_expected_time.resize(self.schedule.len(), 0.);
 
-        if self.schedule.len() <= 1000
+        if self.schedule.len() <= 100
         {
             print!("The schedule is: ", );
             for node_index in self.schedule.iter() {

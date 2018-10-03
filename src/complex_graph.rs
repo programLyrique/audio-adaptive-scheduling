@@ -24,6 +24,7 @@ use std::fs::File;
 const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
+const NB_CYCLES : u32 = 1000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
@@ -68,7 +69,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
         });
 
 
-    if nb_oscillators <= 1000 {
+    if nb_oscillators <= 100 {
         println!("Matrix of random graph: {:?}", rand_gen);
         println!("Random graph: {}", audio_graph);
     }
@@ -83,6 +84,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
 
     //Thread to monitor the audio callback
     let (tx_monit, rx_monit) = mpsc::channel::<TimeMonitor>();
+    let mut nb_cycles = 0;
 
     thread::spawn(move || {
 
@@ -106,31 +108,40 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
 
     });
 
-    //TODO: rather choose the closure (but have to use Box or impl trait)
     let callback = move |pa::OutputStreamCallbackArgs { buffer, frames : _frames , time, flags}| {
             //time members are in seconds. We need to convert it to microseconds
             let rel_deadline = (time.buffer_dac- time.current) * 1_000_000.; //microseconds
+            nb_cycles += 1;
             assert!(time.buffer_dac- time.current < 1.0);
             let times = match mode {
                 Mode::Exhaustive => audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags)),
                 Mode::Progressive => audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags))
             };
             tx_monit.send(times).unwrap();
-
-            pa::Continue
-
+            if nb_cycles >= NB_CYCLES {
+                pa::Complete
+            }
+            else {
+                pa::Continue
+            }
     };
 
     let mut stream = try!(pa.open_non_blocking_stream(settings, callback));
 
     try!(stream.start());
 
-    let sleep_duration = rust_time::Duration::from_millis(NUM_SECONDS * 1000);
-    thread::sleep(sleep_duration);
+    let sleep_duration = rust_time::Duration::from_millis(500);
+    /*thread::sleep(sleep_duration);
 
     try!(stream.stop());
     try!(stream.close());
-    thread::sleep(sleep_duration / NUM_SECONDS as u32);//To give time to the monitoring infos to be written
+    thread::sleep(sleep_duration / NUM_SECONDS as u32);//To give time to the monitoring infos to be written*/
+    while try!(stream.is_active()) {
+        thread::sleep(sleep_duration);
+    }
+
+    try!(stream.stop());
+    try!(stream.close());
 
     Ok(())
 }
@@ -151,7 +162,7 @@ fn main() {
     let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]");
 
     let proba_edge = if args.len() == 4 {
-        let res = args[3].parse::<f64>().expect("proba_edge must a floatin point number");
+        let res = args[3].parse::<f64>().expect("proba_edge must a floating point number");
         if 0. <= res && res <= 1. {
             res
         }
