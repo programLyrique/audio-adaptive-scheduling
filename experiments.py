@@ -49,7 +49,9 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     print("Collating results")
     for f in tqdm(files):
         #data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=[('Quality', '<i8'), ('Budget', '<i8'), ('ExpectRemainingTime', '<i8'), ('Deadline', '<i8'), ('NbNodes', '<i8'), ('ExecutionTime', '<i8'), ('ChoosingDuration', '<i8'), ('CallbackFlags', 'S16')], names=True)
-        data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=None, names=True, skip_header=1)
+        data = np.genfromtxt(f, delimiter="\t", encoding=None, names=True, skip_header=1, dtype=[('Quality', '<i8'), ('Budget', '<i8'), ('ExpectRemainingTime', '<i8'), ('Deadline', '<i8'), ('NbDegradedNodes', '<i8'), ('NbResamplers', '<i8'),
+            ('ExecutionTime', '<i8'), ('ChoosingDuration', '<i8'), ('CallbackFlags', '<U7')])
+        #data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=None, names=True, skip_header=1)
         nbActualNodes=-1
         nbActualEdges=-1
         with open(f, "r") as datafile:
@@ -123,7 +125,9 @@ proba_edge = 0.5
 if len(sys.argv) > 3:
     proba_edge = float(sys.argv[3])
 
-programPath="audio_adaptive_scheduling/target/release/complex_graph"
+#programPath="audio_adaptive_scheduling/target/release/complex_graph"
+programPath="audio-adaptive-scheduling/target/release/complex_graph"
+
 
 #nbNodes = [10, 100, 1000]
 #nbNodes = [10, 100, 200, 300, 350, 400, 1000]
