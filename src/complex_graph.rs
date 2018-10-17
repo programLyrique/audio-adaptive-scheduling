@@ -24,7 +24,7 @@ use std::fs::File;
 const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
-const NB_CYCLES : u32 = 1000;
+const NB_CYCLES : u32 = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
@@ -68,7 +68,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
             }
         });
 
-
+        println!("Random graph has been generated.");
     if nb_oscillators <= 100 {
         println!("Matrix of random graph: {:?}", rand_gen);
         println!("Random graph: {}", audio_graph);
@@ -126,8 +126,10 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
             }
     };
 
+    println!("Opening non blocking stream");
     let mut stream = try!(pa.open_non_blocking_stream(settings, callback));
 
+    println!("Starting stream");
     try!(stream.start());
 
     let sleep_duration = rust_time::Duration::from_millis(500);

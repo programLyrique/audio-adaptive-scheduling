@@ -496,6 +496,11 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
                     let mut edges = self.outputs_mut(*index);
                     while let Some(edge) = edges.next_edge(&self.graph) {
                         let connection = self.graph.edge_weight_mut(edge).unwrap();
+                        if connection.buffer.len() != buffer.len() {
+                            //We are in normal mode so
+                            // Resize to normal size
+                            connection.buffer.resize(soundcard_size, 0.0);//should be soundcard_size
+                         }
                         let duration = Duration::span(|| {
                             debug_assert_eq!(buffer.len() , connection.buffer.len());
                             connection.buffer.copy_from_slice(buffer);//TODO: panic here because of destination and source slice with not same size

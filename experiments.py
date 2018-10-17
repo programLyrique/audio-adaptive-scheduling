@@ -120,7 +120,7 @@ os.chdir(baseFolder)
 nbRuns = int(sys.argv[2])
 
 proba_edge = 0.5
-if len(sys.argv) == 3:
+if len(sys.argv) > 3:
     proba_edge = float(sys.argv[3])
 
 programPath="audio_adaptive_scheduling/target/release/complex_graph"
