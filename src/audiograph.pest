@@ -1,0 +1,12 @@
+ident = { ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+port = {ASCII_DIGIT+}
+
+WHITESPACE = _{ " " | NEWLINE }
+
+edges = {ident ~ "." ~ port}
+
+file = {
+  SOI
+  ~ ident
+  ~ EOI
+}

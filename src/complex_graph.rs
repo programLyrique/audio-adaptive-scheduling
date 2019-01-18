@@ -28,6 +28,7 @@ const NB_CYCLES : u32 = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
+    Baseline,
     Exhaustive,
     Progressive,
 }
@@ -67,8 +68,9 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
                 NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
             }
         });
+    //TODO: don't generate cyclic graphs!!
 
-        println!("Random graph has been generated.");
+    println!("Random graph has been generated.");
     if nb_oscillators <= 100 {
         println!("Matrix of random graph: {:?}", rand_gen);
         println!("Random graph: {}", audio_graph);
@@ -88,7 +90,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
 
     thread::spawn(move || {
 
-        let mut f = File::create(format!("complex_graph_{}_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , _ => "prog"}, nb_oscillators, proba_edge)).expect("Impossible to report execution times");
+        let mut f = File::create(format!("complex_graph_{}_{}_{}_{}.csv",time::now().rfc3339(), match mode {Mode::Exhaustive => "ex" , Mode::Progressive => "prog", Mode::Baseline => "base"}, nb_oscillators, proba_edge)).expect("Impossible to report execution times");
         f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
         f.write_all(b"Quality\tBudget\tExpectRemainingTime\tDeadline\tNbDegradedNodes\tNbResamplers\tExecutionTime\tChoosingDuration\tCallbackFlags\n").unwrap();
        for monitoring_infos in rx_monit.iter() {
@@ -114,6 +116,7 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
             nb_cycles += 1;
             assert!(time.buffer_dac- time.current < 1.0);
             let times = match mode {
+                Mode::Baseline => audio_graph.process_baseline(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags)),
                 Mode::Exhaustive => audio_graph.process_adaptive_exhaustive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags)),
                 Mode::Progressive => audio_graph.process_adaptive_progressive(buffer, SAMPLE_RATE as u32, CHANNELS as usize, rel_deadline, CallbackFlags::from_callback_flags(flags))
             };
@@ -153,15 +156,16 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        println!("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]");
+        println!("Usage: basic_example [BASE|EX|PROG] nb_oscillators [proba_edge]");
         exit(0);
     }
     let mode = match args[1].as_str() {
+        "BASE" => Mode::Baseline,
         "EX" => Mode::Exhaustive,
         "PROG" => Mode::Progressive,
-         _ => {println!("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]"); std::process::exit(1)}
+         _ => {println!("Usage: basic_example [BASE|EX|PROG] nb_oscillators [proba_edge]"); std::process::exit(1)}
     };
-    let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [EX|PROG] nb_oscillators [proba_edge]");
+    let nb_oscillators = args[2].parse::<u32>().expect("Usage: basic_example [BASE|EX|PROG] nb_oscillators [proba_edge]");
 
     let proba_edge = if args.len() == 4 {
         let res = args[3].parse::<f64>().expect("proba_edge must a floating point number");

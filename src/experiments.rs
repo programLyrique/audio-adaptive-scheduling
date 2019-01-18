@@ -112,6 +112,7 @@ impl<T : fmt::Display+ AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for Ran
                 };
             };
         };
+        //TODO: we should check if there is no cycles!!
         graph
     }
 }

@@ -419,6 +419,71 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
         return Quality::Normal;
     }
 
+    /// Process without degrading. Baseline to compare
+    pub fn process_baseline(&mut self, buffer: &mut [f32], samplerate : u32, channels : usize, rel_deadline : f64, flags : CallbackFlags) -> TimeMonitor {
+        let mut budget = rel_deadline as i64;
+
+        let start = PreciseTime::now();
+
+        let quality = Quality::Normal;
+
+        self.update_remaining_times();
+        let mut expected_remaining_time = self.schedule_expected_time[0];
+
+        for (i, index) in self.schedule.iter().enumerate() {
+            let start_time  = PreciseTime::now();
+
+            if (budget as f64) < self.schedule_expected_time[i] {
+                expected_remaining_time = start.to(PreciseTime::now()).num_microseconds().unwrap() as f64 + self.schedule_expected_time[i]
+            }
+
+            let mut stats = self.time_input;
+            //Get input edges here, and the buffers on this connection, and mix them
+            for connection in self.inputs(*index) {
+                let duration = Duration::span(|| {
+                    mixer(buffer, &connection.weight().buffer)
+                }).num_microseconds().unwrap();
+                stats.update(duration as f64);
+            }
+            self.time_input = stats;
+
+            {
+                let node = self.graph.node_weight_mut(*index).unwrap();
+
+                let duration = Duration::span(|| {
+                    node.process(buffer, samplerate, channels)
+                }).num_microseconds().unwrap();
+
+                self.time_nodes[node.id()].update(duration as f64);
+            }
+
+            //Write buffer in the output edges
+
+            let mut edges = self.outputs_mut(*index);
+            while let Some(edge) = edges.next_edge(&self.graph) {
+                let connection = self.graph.edge_weight_mut(edge).unwrap();
+                let duration = Duration::span(|| {
+                    debug_assert_eq!(buffer.len() , connection.buffer.len());
+                    connection.buffer.copy_from_slice(buffer);
+                }).num_microseconds().unwrap();
+
+                self.time_output.update(duration as f64);
+            }
+            budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
+        }
+
+        budget = start.to(PreciseTime::now()).num_microseconds().unwrap();
+
+        TimeMonitor {quality, budget,
+                    deadline : rel_deadline as u64,
+                    expected_remaining_time : expected_remaining_time as u64,
+                    execution_time : start.to(PreciseTime::now()).num_microseconds().unwrap() as u64,
+                    callback_flags : flags,
+                    nb_resamplers : 0,
+                    choosing_duration : 0,
+                    nb_degraded : 0
+                }
+    }
 
     /// Adaptive version of the process method for the audio graph
     /// rel_dealine must be in milliseconds (actually, we could even have a nanoseconds granularity)

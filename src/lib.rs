@@ -22,3 +22,8 @@ pub mod ringbuffer;
 pub mod effect;
 pub mod experiments;
 pub mod stats;
+pub mod audiograph_parser;
+
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;

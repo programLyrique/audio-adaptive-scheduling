@@ -49,8 +49,8 @@ def launch_experiments(ag_results, mode, nbNodes, nbRuns, proba_edge):
     print("Collating results")
     for f in tqdm(files):
         #data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=[('Quality', '<i8'), ('Budget', '<i8'), ('ExpectRemainingTime', '<i8'), ('Deadline', '<i8'), ('NbNodes', '<i8'), ('ExecutionTime', '<i8'), ('ChoosingDuration', '<i8'), ('CallbackFlags', 'S16')], names=True)
-        data = np.genfromtxt(f, delimiter="\t", encoding=None, names=True, skip_header=1, dtype=[('Quality', '<i8'), ('Budget', '<i8'), ('ExpectRemainingTime', '<i8'), ('Deadline', '<i8'), ('NbDegradedNodes', '<i8'), ('NbResamplers', '<i8'),
-            ('ExecutionTime', '<i8'), ('ChoosingDuration', '<i8'), ('CallbackFlags', '<U7')])
+        data = np.genfromtxt(f, delimiter="\t", encoding=None, names=True, skip_header=1, dtype=[('Quality', '<f8'), ('Budget', '<f8'), ('ExpectRemainingTime', '<f8'), ('Deadline', '<f8'), ('NbDegradedNodes', '<f8'), ('NbResamplers', '<f8'),
+            ('ExecutionTime', '<f8'), ('ChoosingDuration', '<f8'), ('CallbackFlags', '<U7')])
         #data = np.genfromtxt(f, delimiter="\t", encoding=None, dtype=None, names=True, skip_header=1)
         nbActualNodes=-1
         nbActualEdges=-1
@@ -112,6 +112,7 @@ def agregate(ag_results):
 if len(sys.argv) < 3:
     print("Usage: experiments.py destinationFolder nbRuns [proba_edge]")
     print("\tif nbRuns <= 0, uses the csv already computed")
+    sys.exit(1)
 # Prepare folder for experiments
 # Must be in the base directory of the source
 baseFolder = sys.argv[1]
@@ -126,7 +127,7 @@ if len(sys.argv) > 3:
     proba_edge = float(sys.argv[3])
 
 #programPath="audio_adaptive_scheduling/target/release/complex_graph"
-programPath="audio-adaptive-scheduling/target/release/complex_graph"
+programPath="audio_adaptive_scheduling/target/release/complex_graph"
 
 
 #nbNodes = [10, 100, 1000]
@@ -139,6 +140,7 @@ print("##### Experiments starting in folder ", baseFolder, " with ", nbRuns, " r
 
 # Launch experiments
 for nb in nbNodes:
+    launch_experiments(agregate_results, "BASE", nb, nbRuns, proba_edge)
     launch_experiments(agregate_results, "EX", nb, nbRuns, proba_edge)
     launch_experiments(agregate_results, "PROG", nb, nbRuns, proba_edge)
 
