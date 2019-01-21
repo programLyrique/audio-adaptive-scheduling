@@ -1,12 +1,34 @@
-ident = { ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+fnumber = @{ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+}
+inumber = @{ASCII_DIGIT+}
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
 port = {ASCII_DIGIT+}
 
-WHITESPACE = _{ " " | NEWLINE }
+WHITESPACE = _{ " " | "\t" | NEWLINE }
 
-edges = {ident ~ "." ~ port}
+port_ident = ${ident ~ "." ~ port}
+
+edges = {port_ident ~ "->" ~ (edges | port_ident)}
+
+
+
+deadline = { "deadline" ~ "=" ~ fnumber}
+
+attribute = {ident ~ ":" ~ (fnumber | inumber | string) ~ ","}
+
+node = {ident ~ "=" ~ "{" ~ attribute* ~ "}"}
+
+statement = {(node | edges | deadline) ~ ";" }
 
 file = {
   SOI
-  ~ ident
+  ~ statement*
   ~ EOI
 }
