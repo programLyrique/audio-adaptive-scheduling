@@ -1,4 +1,4 @@
-fnumber = @{ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+}
+fnumber = @{ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*}
 inumber = @{ASCII_DIGIT+}
 string = ${ "\"" ~ inner ~ "\"" }
 inner = @{ char* }

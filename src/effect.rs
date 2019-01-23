@@ -133,7 +133,7 @@ pub struct AudioGraph<T : Copy + AudioEffect + fmt::Display + Eq> {
     channels : u32,//Number of channels,
     frames_per_buffer : u32,
     time_nodes : Vec<Stats>,//To keep mean execution time for every type of node
-    //Why not a HashMap? Too slow! (100-150µs). We rather do our "own" hash table, which perfect
+    //Why not a HashMap? Too slow! (100-150µs). We rather do our "own" hash table, with perfect
     //hashing as we know the number of different kinds of nodes (it is nb_effects)
     time_input : Stats, //Mean time to populate one input connection
     time_output : Stats,//Mean time to populate one output connection
