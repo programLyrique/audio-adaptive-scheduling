@@ -33,7 +33,7 @@ pub struct DspEdge {
 
 impl DspEdge {
     pub fn new(src_port:u32, dst_port:u32, buffer_size:usize) -> DspEdge {
-        DspEdge {src_port, dst_port, buffer_size: vec![0.;buffer_size]}
+        DspEdge {src_port, dst_port, buffer: vec![0.;buffer_size]}
     }
 }
 
@@ -46,6 +46,12 @@ pub struct DspNode {
 impl DspNode {
     pub fn new(node_infos : audiograph_parser::Node, node_processor : Box<dyn AudioEffect>) -> DspNode {
         DspNode {node_infos, node_processor}
+    }
+}
+
+impl fmt::Display for  DspNode {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        self.node_processor.fmt(f)
     }
 }
 
@@ -146,11 +152,9 @@ impl AudioGraph {
             self.graph.edges_directed(src, EdgeDirection::Outgoing)
         }
 
-        */
-
         pub fn nb_outputs(& self, src : NodeIndex) -> u32 {
             self.outputs(src).count() as u32
-        }
+        }*/
 
         pub fn outputs_mut(&self, src : NodeIndex) -> WalkNeighbors<u32> {
             self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
@@ -170,14 +174,13 @@ impl AudioGraph {
 
         pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
             self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
-            self.schedule_expected_time.resize(self.schedule.len(), 0.);
 
             if self.schedule.len() <= 100
             {
                 print!("The schedule is: ", );
                 for node_index in self.schedule.iter() {
                     let node = self.graph.node_weight(*node_index).unwrap();
-                    print!("{} -> ", node);
+                    //print!("{} -> ", node);
                 }
                 println!(" Sink");//TODO. Add explicit sink and source nodes !! (Or at least say explicitly that we add them automatically)
             }
