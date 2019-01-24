@@ -23,6 +23,7 @@ pub mod effect;
 pub mod experiments;
 pub mod stats;
 pub mod audiograph_parser;
+pub mod audiograph;
 
 extern crate pest;
 #[macro_use]

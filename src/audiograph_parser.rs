@@ -10,13 +10,14 @@ use itertools::Itertools;
 
 use pest::error::Error as ParseError;
 
-use effect::*;
+use audiograph::*;
 
+#[derive(Debug)]
 pub struct Node  {
     id: String,
     nb_inlets: u32,
     nb_outlets: u32,
-    className: String,
+    class_name: String,
     text: Option<String>,
     wcet: Option<f64>,
     more: HashMap<String, String>
@@ -27,7 +28,7 @@ impl Node {
         Node { id : String::new(),
             nb_inlets : 0,
             nb_outlets : 0,
-            className : String::new(),
+            class_name : String::new(),
             text : None,
             wcet : None,
             more : HashMap::new()
@@ -35,6 +36,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 pub struct Edge {
     src_id: String,
     src_port: u32,
@@ -65,7 +67,7 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph<DspNode>, ParseError
                 "in" => node.nb_inlets = v.parse().unwrap(),
                 "out" => node.nb_outlets = v.parse().unwrap(),
                 "text" => node.text = Some(v.to_string()),
-                "kind" => node.className = v.to_string(),
+                "kind" => node.class_name = v.to_string(),
                 "wcet" => node.wcet = Some(v.parse().unwrap()),
                 _ => {node.more.insert(id.to_string(), v.to_string()).unwrap();},
             }
