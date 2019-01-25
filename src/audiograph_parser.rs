@@ -24,7 +24,7 @@ pub struct Node  {
 }
 
 impl Node {
-    fn new() -> Node  {
+    pub fn new() -> Node  {
         Node { id : String::new(),
             nb_inlets : 0,
             nb_outlets : 0,
