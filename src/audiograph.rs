@@ -295,6 +295,7 @@ impl AudioEffect for AudioGraph {
                 i += 1;
             }
         }
+        self.input_edges[0].resize(self.size);
 
         //We assume that sink is the last node in the schedule and execute it separately
         for node in self.schedule[0..self.schedule.len() - 1].iter() {
@@ -342,7 +343,7 @@ impl AudioEffect for AudioGraph {
         self.graph.node_weight_mut(self.output_node_index).unwrap().node_processor.process(&self.input_edges[0..self.channels as usize], &mut self.output_edges[0..1], samplerate);
         //Prepare Output to soundcard
         output_buffer.copy_from_slice(self.output_edges[0].buffer());
-
+        self.output_edges[0].resize(self.size);
     }
 
     fn nb_inputs(&self) -> usize {
