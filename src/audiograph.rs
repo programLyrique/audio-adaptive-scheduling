@@ -118,19 +118,30 @@ impl AudioGraph {
             self.frames_per_buffer
         }
 
-        /*pub fn add_node(&mut self, node : T) -> NodeIndex {
+        pub fn add_node(&mut self, node : DspNode) -> NodeIndex {
             self.graph.add_node(node)
         }
 
-        pub fn add_input(&mut self, src : T, dest : NodeIndex) -> NodeIndex {
+
+        pub fn add_input(&mut self, src : DspNode, src_port: u32, dst : NodeIndex, dst_port: u32) -> NodeIndex {
+            {
+                assert!(src_port <= src.node_processor.nb_outputs() as u32 && src_port >= 1);
+                let dst_node = self.graph.node_weight(dst).unwrap();
+                assert!(dst_port <= dst_node.node_processor.nb_inputs() as u32 && dst_port >= 1);
+            }
             let parent = self.graph.add_node(src);
-            self.graph.add_edge(parent, dest, Connection::new(vec![0.;self.size], self.channels));
+            self.graph.add_edge(parent, dst, DspEdge::new(src_port, dst_port, self.size));
             parent
         }
 
-        pub fn add_output(&mut self, src : NodeIndex, dest : T) -> NodeIndex {
-            let child = self.graph.add_node(dest);
-            self.graph.add_edge(src, child, Connection::new(vec![0.;self.size], self.channels));
+        pub fn add_output(&mut self, src : NodeIndex, src_port: u32, dst : DspNode, dst_port: u32) -> NodeIndex {
+            {
+                let src_node = self.graph.node_weight(src).unwrap();
+                assert!(src_port <= src_node.node_processor.nb_outputs() as u32 && src_port >= 1);
+                assert!(dst_port <= dst.node_processor.nb_inputs() as u32 && dst_port >= 1);
+            }
+            let child = self.graph.add_node(dst);
+            self.graph.add_edge(src, child, DspEdge::new(src_port, dst_port, self.size));
             child
         }
 
@@ -144,17 +155,17 @@ impl AudioGraph {
             self.graph.remove_edge(edge);
         }
 
-        pub fn add_connection(&mut self, src: NodeIndex, dest : NodeIndex) -> EdgeIndex {
-            self.graph.add_edge(src, dest, Connection::new(vec![0.;self.size], self.channels))
+        pub fn add_connection(&mut self, src: NodeIndex, src_port: u32, dst : NodeIndex, dst_port: u32) -> EdgeIndex {
+            self.graph.add_edge(src, dst, DspEdge::new(src_port, dst_port, self.size))
         }
 
-        pub fn outputs(& self, src : NodeIndex) -> Edges<Connection, Directed> {
+        pub fn outputs(& self, src : NodeIndex) -> Edges<DspEdge, Directed> {
             self.graph.edges_directed(src, EdgeDirection::Outgoing)
         }
 
         pub fn nb_outputs(& self, src : NodeIndex) -> u32 {
             self.outputs(src).count() as u32
-        }*/
+        }
 
         pub fn outputs_mut(&self, src : NodeIndex) -> WalkNeighbors<u32> {
             self.graph.neighbors_directed(src, EdgeDirection::Outgoing).detach()
@@ -180,7 +191,7 @@ impl AudioGraph {
                 print!("The schedule is: ", );
                 for node_index in self.schedule.iter() {
                     let node = self.graph.node_weight(*node_index).unwrap();
-                    //print!("{} -> ", node);
+                    print!("{} -> ", node);
                 }
                 println!(" Sink");//TODO. Add explicit sink and source nodes !! (Or at least say explicitly that we add them automatically)
             }
