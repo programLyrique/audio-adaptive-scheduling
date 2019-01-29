@@ -7,7 +7,7 @@ use petgraph::{Graph, EdgeDirection, Directed};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot};
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{Reversed, Dfs, VisitMap, Visitable};
 use petgraph;
 
 use std::fmt;
@@ -237,8 +237,28 @@ impl AudioGraph {
         self.inputs(dest).count() as u32
     }
 
+    /// Remove nodes not connected to the sink from the schedule
+    fn active_component(&mut self) {
+        let rev_graph = Reversed(&self.graph);
+        let dfs = Dfs::new(&rev_graph, self.output_node_index);
+
+        println!("{:?}", dfs.discovered.is_visited(&self.input_node_index));
+
+        let mut filtered_schedule = Vec::with_capacity(self.schedule.len());
+        for node in self.schedule.iter() {
+            if dfs.discovered.is_visited(node) {
+                filtered_schedule.push(*node);
+            }
+        }
+        self.schedule = filtered_schedule;
+
+        //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
+    }
+
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
+
+        self.active_component();
 
         if self.schedule.len() <= 100
         {
@@ -248,7 +268,6 @@ impl AudioGraph {
                 print!("{} -> ", node);
             }
         }
-
 
         Ok(())
     }
