@@ -7,7 +7,7 @@ use petgraph::{Graph, EdgeDirection, Directed};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot};
-use petgraph::visit::{Reversed, Dfs, VisitMap, Visitable};
+use petgraph::visit::{Reversed, Dfs, VisitMap};
 use petgraph;
 
 use std::fmt;
@@ -64,8 +64,35 @@ pub struct DspNode {
 }
 
 impl DspNode {
-    pub fn new(node_infos : audiograph_parser::Node, node_processor : Box<dyn AudioEffect>) -> DspNode {
+    pub fn from_parts(node_infos : audiograph_parser::Node, node_processor : Box<dyn AudioEffect>) -> DspNode {
         DspNode {node_infos, node_processor}
+    }
+
+    pub fn new(node_infos: audiograph_parser::Node) -> DspNode {
+        let node_processor : Box<dyn AudioEffect> = match node_infos.class_name.as_str() {
+            "osc" => Box::new(Oscillator::from_node_infos(&node_infos)),
+            "mod" => Box::new(Modulator::from_node_infos(&node_infos)),
+            "mix" => Box::new(InputsOutputsAdaptor::from_node_infos(&node_infos)),
+            _ => {//We replace it by a default effect
+                if node_infos.nb_inlets == 0 && node_infos.nb_outlets == 1 {
+                    Box::new(Oscillator::from_node_infos(&node_infos))
+                }
+                else if node_infos.nb_inlets == 1 && node_infos.nb_outlets == 1 {
+                    Box::new(Modulator::from_node_infos(&node_infos))
+                }
+                else if node_infos.nb_outlets == 0 {
+                    panic!("Not handled yet!")
+                }
+                else {
+                    Box::new(InputsOutputsAdaptor::from_node_infos(&node_infos))
+                }
+            }
+        };
+        DspNode {node_infos, node_processor}
+    }
+
+    pub fn node_infos(&self) -> &audiograph_parser::Node {
+        &self.node_infos
     }
 }
 
@@ -77,10 +104,15 @@ impl fmt::Display for  DspNode {
 
 
 pub trait AudioEffect : fmt::Display {
-    fn process(& mut self, inputs: &[DspEdge], outputs: &mut [DspEdge], samplerate : u32);
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge], samplerate : u32);
 
     fn nb_inputs(&self) -> usize;
     fn nb_outputs(&self) -> usize;
+
+    fn check_io_node_infos(&self, node_infos: &audiograph_parser::Node) {
+        assert!(node_infos.nb_inlets as usize == self.nb_inputs());
+        assert!(node_infos.nb_outlets as usize == self.nb_outputs());
+    }
 }
 
 
@@ -98,11 +130,13 @@ impl AudioEffect for Box<AudioEffect>
     fn nb_outputs(&self) -> usize { (**self).nb_outputs()}
 }
 
+
+
 /// Represents an audiograph of nodes with ports.
 /// Beware that NodeIndex are invalidated after removal of nodes (so just don't remove anything).
 /// If removing is necessary, we could consider using stable_graph instead of graph.
 pub struct AudioGraph {
-    graph : Graph<DspNode,DspEdge>,
+    pub graph : Graph<DspNode,DspEdge>,
     schedule : Vec< NodeIndex<u32> >,
     size : usize,//Default size of a buffer
     channels : u32,//Number of channels,
@@ -119,12 +153,10 @@ impl AudioGraph {
         let input_node_infos = audiograph_parser::Node::new();
         let output_node_infos = audiograph_parser::Node::new();
         let mut graph = Graph::new();
-        let input_node = DspNode::new(input_node_infos, Box::new( Source {nb_channels:channels as usize, frames_per_buffer}));
-        let output_node = DspNode::new(output_node_infos, Box::new( Sink {nb_channels:channels as usize, frames_per_buffer }));
+        let input_node = DspNode::from_parts(input_node_infos, Box::new( Source {nb_channels:channels as usize, frames_per_buffer}));
+        let output_node = DspNode::from_parts(output_node_infos, Box::new( Sink {nb_channels:channels as usize, frames_per_buffer }));
         let input_node_index = graph.add_node(input_node);
         let output_node_index = graph.add_node(output_node);
-
-        let size_io = (channels * frames_per_buffer) as usize;
 
         AudioGraph {graph, schedule : Vec::new(),
             size : frames_per_buffer as usize,
@@ -389,6 +421,12 @@ impl Oscillator {
     pub fn new(initial_phase: f32, frequency: u32, volume: f32) -> Oscillator {
         Oscillator {phase: initial_phase, frequency, volume}
     }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Oscillator {
+        let osc = Oscillator::new(0., node_infos.more["freq"].parse().expect("freq must be an integer"), node_infos.volume);
+        osc.check_io_node_infos(node_infos);
+        osc
+    }
 }
 
 impl fmt::Display for  Oscillator {
@@ -412,6 +450,47 @@ impl AudioEffect for Oscillator {
     fn nb_outputs(&self) -> usize {1}
 }
 
+#[derive(Debug)]
+struct Modulator {
+    phase: f32,
+    frequency: u32,
+    volume: f32
+}
+
+impl Modulator {
+    pub fn new(initial_phase: f32, frequency: u32, volume: f32) -> Modulator {
+        Modulator {phase: initial_phase, frequency, volume}
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Modulator {
+        let modu = Modulator::new(0., node_infos.more["freq"].parse().expect("freq must be an integer"), node_infos.volume);
+        modu.check_io_node_infos(node_infos);
+        modu
+    }
+}
+
+impl fmt::Display for  Modulator {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "mod({}, {}, {})", self.phase, self.frequency, self.volume)
+    }
+}
+
+impl AudioEffect for Modulator {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+        debug_assert!(inputs.len() == self.nb_inputs());
+        debug_assert!(outputs.len() == self.nb_outputs());
+        debug_assert!(outputs[0].buffer().len() == inputs[0].buffer().len());
+
+        for (sample_out, sample_in) in outputs[0].buffer_mut().iter_mut().zip(inputs[0].buffer().iter()) {
+            *sample_out = *sample_in * sine_wave(self.phase, self.volume);
+            self.phase += self.frequency as f32 / samplerate as f32;
+        }
+    }
+
+    fn nb_inputs(&self) -> usize {1}
+    fn nb_outputs(&self) -> usize {1}
+}
+
 /// Similar to :> or <: in Faust. Can be used as a mixer if :>
 #[derive(Debug)]
 pub struct InputsOutputsAdaptor {
@@ -425,6 +504,12 @@ impl InputsOutputsAdaptor {
         assert!(nb_inputs % nb_outputs == 0 || nb_outputs % nb_inputs == 0 );
         let stride = if nb_outputs > nb_inputs {nb_outputs % nb_inputs} else {nb_inputs % nb_outputs};
         InputsOutputsAdaptor {nb_inputs, nb_outputs, stride}
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> InputsOutputsAdaptor {
+        let io_adapt = InputsOutputsAdaptor::new(node_infos.nb_inlets as usize, node_infos.nb_outlets as usize);
+        io_adapt.check_io_node_infos(node_infos);
+        io_adapt
     }
 }
 
@@ -508,7 +593,6 @@ impl fmt::Display for  Source {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         write!(f, "source({})", self.nb_channels)
     }
-
 }
 
 

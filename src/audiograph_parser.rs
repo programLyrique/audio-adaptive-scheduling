@@ -6,6 +6,8 @@ use std::path::Path;
 use pest::Parser;
 use std::collections::HashMap;
 
+use petgraph::graph::NodeIndex;
+
 use itertools::Itertools;
 
 use pest::error::Error as ParseError;
@@ -14,13 +16,14 @@ use audiograph::*;
 
 #[derive(Debug)]
 pub struct Node  {
-    id: String,
-    nb_inlets: u32,
-    nb_outlets: u32,
-    class_name: String,
-    text: Option<String>,
-    wcet: Option<f64>,
-    more: HashMap<String, String>
+    pub id: String,
+    pub nb_inlets: u32,
+    pub nb_outlets: u32,
+    pub class_name: String,
+    pub text: Option<String>,
+    pub wcet: Option<f64>,
+    pub more: HashMap<String, String>,
+    pub volume: f32
 }
 
 impl Node {
@@ -31,6 +34,7 @@ impl Node {
             class_name : String::new(),
             text : None,
             wcet : None,
+            volume: 1.,
             more : HashMap::new()
         }
     }
@@ -69,6 +73,7 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
                 "text" => node.text = Some(v.to_string()),
                 "kind" => node.class_name = v.to_string(),
                 "wcet" => node.wcet = Some(v.parse().unwrap()),
+                "volume" => node.volume = v.parse().unwrap(),
                 _ => {node.more.insert(id.to_string(), v.to_string()).unwrap();},
             }
         }
@@ -99,8 +104,48 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
 
     let nodes = nodes.into_iter().map(parse_node).collect::<Vec<_>>();
     let edges = edges.into_iter().flat_map(parse_edge).collect::<Vec<_>>();
+    let mut node_indexes : HashMap<String, NodeIndex> = HashMap::new();
 
-    Ok(AudioGraph::new(64,1))
+    let mut audiograph = AudioGraph::new(64,1);
+
+    for (i,node_infos) in nodes.into_iter().enumerate() {
+        let id = node_infos.id.clone();
+        let node = DspNode::new(node_infos);
+        let node_index = audiograph.add_node(node);
+        node_indexes.insert(id, node_index);
+    }
+
+    for edge in edges.iter() {
+        let src_node = node_indexes[&edge.src_id];
+        let dst_node = node_indexes[&edge.dst_id];
+        audiograph.add_connection(src_node, edge.src_port, dst_node, edge.dst_port);
+    }
+    //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
+    for node_index in audiograph.graph.node_indices() {
+        let node = audiograph.graph.node_weight(node_index).unwrap();
+        // Theoretical I/O
+        let nb_in_t = node.node_infos().nb_inlets;
+        let nb_out_t = node.node_infos().nb_outlets;
+        // Actually
+        let nb_in_r = audiograph.nb_inputs(node_index);
+        let nb_out_r = audiograph.nb_outputs(node_index);
+
+        // Check if some ports are not connected
+        if nb_in_t > nb_in_r {
+            //Collect non connected input ports
+
+            //Connect them to audio source
+        }
+
+        if nb_out_t > nb_out_r {
+            //Collect non connected output ports
+
+            //Connect them to audio sink
+        }
+
+    }
+
+    Ok(audiograph)
 }
 
 fn parse_audiograph_from_file(filename : &str) -> Result<AudioGraph, ParseError<Rule>>  {
