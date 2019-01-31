@@ -13,6 +13,7 @@ use petgraph;
 use std::fmt;
 
 use audiograph_parser;
+use samplerate;
 
 #[derive(Debug)]
 pub enum AudioGraphError {
@@ -77,6 +78,7 @@ impl DspNode {
             "osc" => Box::new(Oscillator::from_node_infos(&node_infos)),
             "mod" => Box::new(Modulator::from_node_infos(&node_infos)),
             "mix" => Box::new(InputsOutputsAdaptor::from_node_infos(&node_infos)),
+            "resampler" => Box::new(Resampler::from_node_infos(&node_infos)),
             _ => {//We replace it by a default effect
                 if node_infos.nb_inlets == 0 && node_infos.nb_outlets == 1 {
                     Box::new(Oscillator::from_node_infos(&node_infos))
@@ -616,4 +618,52 @@ impl AudioEffect for Source {
     }
     fn nb_inputs(&self) -> usize {1}
     fn nb_outputs(&self) -> usize {self.nb_channels}
+}
+
+
+#[derive(Debug)]
+pub struct Resampler {
+    resampler: samplerate::Resampler,
+}
+
+impl Resampler {
+    pub fn new(converter_type : samplerate::ConverterType, src_ratio: f64) -> Resampler {
+        Resampler { resampler: samplerate::Resampler::new(converter_type, 1, src_ratio)}
+    }
+
+    pub fn from_node_infos(node_infos : &audiograph_parser::Node) -> Resampler {
+        let converter_type = node_infos.more.get("conv")
+            .map_or(samplerate::ConverterType::Linear,
+                |s|  match s.as_str() {
+                "sinc_best" => samplerate::ConverterType::SincBestQuality,
+                "sinc_medium" => samplerate::ConverterType::SincMediumQuality,
+                "sinc_fastest" => samplerate::ConverterType::SincFastest,
+                "zero_hold" => samplerate::ConverterType::ZeroOrderHold,
+                "linear" => samplerate::ConverterType::Linear,
+                _ => samplerate::ConverterType::Linear,
+            });
+        let ratio = node_infos.more.get("ratio").expect(&format!("Resampler {} needs explicit ratio.", node_infos.id)).parse().unwrap();
+        let resampler = Resampler::new(converter_type, ratio);
+        resampler.check_io_node_infos(node_infos);
+        resampler
+    }
+}
+
+impl fmt::Display for  Resampler {
+    fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "resampler({})", self.resampler.src_ratio)
+    }
+}
+
+
+impl AudioEffect for Resampler {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+        debug_assert!(inputs.len() == self.nb_inputs());
+        debug_assert!(outputs.len() == self.nb_outputs());
+
+        self.resampler.resample(inputs[0].buffer(), outputs[0].buffer_mut()).unwrap();
+
+    }
+    fn nb_inputs(&self) -> usize {1}
+    fn nb_outputs(&self) -> usize {1}
 }

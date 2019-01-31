@@ -111,8 +111,8 @@ impl<'a> SimpleResampler<'a> {
 
 #[derive(Debug)]
 pub struct Resampler {
-    channels : u32,
-    src_ratio :  f64,
+    pub channels : u32,
+    pub src_ratio :  f64,
     end_of_input : bool,
     src_state : *mut SRC_STATE,
 }
