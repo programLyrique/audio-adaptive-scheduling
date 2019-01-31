@@ -5,6 +5,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use pest::Parser;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use petgraph::graph::NodeIndex;
 
@@ -121,6 +122,7 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
         audiograph.add_connection(src_node, edge.src_port, dst_node, edge.dst_port);
     }
     //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
+    let mut io_edges = Vec::new();
     for node_index in audiograph.graph.node_indices() {
         let node = audiograph.graph.node_weight(node_index).unwrap();
         // Theoretical I/O
@@ -132,17 +134,35 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
 
         // Check if some ports are not connected
         if nb_in_t > nb_in_r {
-            //Collect non connected input ports
-
+            //Collect connected input ports
+            let input_edges = audiograph.inputs(node_index);
+            let input_ports = input_edges.map(|e| e.weight().dst_port()).collect::<HashSet<_>>();
             //Connect them to audio source
+            for port in 1..nb_in_t {
+                if !input_ports.contains(&port) {//It's a non-connected port
+                    io_edges.push((audiograph.source_node(), 1, node_index, port));
+                }
+            }
         }
 
         if nb_out_t > nb_out_r {
-            //Collect non connected output ports
+            //Collect connected output ports
+            let output_edges = audiograph.outputs(node_index);
+            let output_ports = output_edges.map(|e| e.weight().src_port()).collect::<HashSet<_>>();
 
             //Connect them to audio sink
+            for port in 1..nb_out_t {
+                if !output_ports.contains(&port) {//It's a non-connected port
+                    io_edges.push((node_index, port, audiograph.sink_node(), 1));
+                }
+            }
         }
 
+    }
+    //Finally add the edges
+    for edge in io_edges.into_iter() {
+        let (src_id, src_port, dst_id, dst_port) = edge;
+        audiograph.add_connection(src_id, src_port, dst_id, dst_port);
     }
 
     Ok(audiograph)

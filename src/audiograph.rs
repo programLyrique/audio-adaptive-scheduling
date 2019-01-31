@@ -38,6 +38,10 @@ impl DspEdge {
         DspEdge {src_port, dst_port, buffer: vec![0.;buffer_size]}
     }
 
+    pub fn src_port(&self) -> u32 {self.src_port}
+
+    pub fn dst_port(&self) -> u32 {self.dst_port}
+
     pub fn buffer(&self) -> &[f32] {
         self.buffer.as_slice()
     }
