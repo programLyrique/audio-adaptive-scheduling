@@ -15,6 +15,10 @@ path = "src/interactive.rs"
 name = "complex_graph"
 path = "src/complex_graph.rs"
 
+[[bin]]
+name = "audiograph"
+path = "src/audiograph_exec.rs"
+
 [lib]
 name = "audio_adaptive"
 
@@ -31,3 +35,4 @@ petgraph = "*"
 pest = "2.0"
 pest_derive = "2.0"
 itertools = "*"
+crossbeam-channel = "*"

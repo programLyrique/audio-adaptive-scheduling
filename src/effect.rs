@@ -472,7 +472,7 @@ impl<T : fmt::Display + AudioEffect + Eq + Hash + Copy> AudioGraph<T> {
             budget -= start_time.to(PreciseTime::now()).num_microseconds().unwrap();
         }
 
-        budget = start.to(PreciseTime::now()).num_microseconds().unwrap();
+        budget = rel_deadline as i64 - start.to(PreciseTime::now()).num_microseconds().unwrap();
 
         TimeMonitor {quality, budget,
                     deadline : rel_deadline as u64,

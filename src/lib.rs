@@ -30,3 +30,5 @@ extern crate pest;
 extern crate pest_derive;
 
 extern crate itertools;
+
+extern crate crossbeam_channel;

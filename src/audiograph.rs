@@ -342,7 +342,7 @@ impl AudioEffect for AudioGraph {
             self.graph.node_weight_mut(self.input_node_index).unwrap().node_processor.process(&self.input_edges[0..1], &mut self.output_edges[0..self.channels as usize], samplerate);
             //Prepare outputs
             //Prepare Outputs
-            //Quite inefficient, with allocating. Rather use a fixed vec with max number of inputs and outputs and a buffer pool
+            //We could decrease memory usage by using a buffer pool
             let mut edges = self.outputs_mut(self.input_node_index);
             let mut i = 0;
             while let Some(edge) = edges.next_edge(&self.graph) {
@@ -360,7 +360,6 @@ impl AudioEffect for AudioGraph {
                 (n.nb_inputs(), n.nb_outputs())
             };
             //Prepare inputs
-            //Quite inefficient, with allocating. Rather use a fixed vec with max number of inputs and outputs and a buffer pool
             // Or just use &[&DspEdge]??
             let mut edges = self.inputs_mut(*node);
             let mut i = 0;

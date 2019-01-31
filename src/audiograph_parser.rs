@@ -122,6 +122,7 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
         audiograph.add_connection(src_node, edge.src_port, dst_node, edge.dst_port);
     }
     //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
+    //TODO: move to a method of audiograph?
     let mut io_edges = Vec::new();
     for node_index in audiograph.graph.node_indices() {
         let node = audiograph.graph.node_weight(node_index).unwrap();
