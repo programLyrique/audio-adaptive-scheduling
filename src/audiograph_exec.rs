@@ -5,6 +5,7 @@ extern crate portaudio;
 extern crate rand;
 extern crate time;
 extern crate crossbeam_channel;
+extern crate clap;
 
 use portaudio as pa;
 use crossbeam_channel::unbounded;
@@ -17,7 +18,10 @@ use time::{PreciseTime, Duration};
 
 use std::io::prelude::*;
 use std::fs::File;
+use std::path::Path;
+use std::ffi::OsStr;
 
+use clap::{Arg, App, ArgGroup};
 
 use audio_adaptive::audiograph::*;
 use audio_adaptive::audiograph_parser::*;
@@ -126,5 +130,46 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String) -> Result<(), 
 }
 
 fn main() {
+    let matches = App::new("Audiograph")
+        .version("0.1.0")//use env! macro to get it from Cargo.toml
+        .author("Pierre Donat-Bouillud")
+        .about("Execute an audio graph .ag in real time or in bounce mode and get timing information about it.")
+        .arg(Arg::with_name("INPUT")
+             .help("Sets the audiograph to use.")
+             .required(true)
+             .index(1))
+        .arg(Arg::with_name("real-time")
+             .short("r")
+             .long("real-time")
+             .help("Execute in real-time"))
+         .arg(Arg::with_name("bounce")
+              .short("b")
+              .long("bounce")
+              .help("Execute the graph offline (bounce), as fast as possible."))
+        .arg(Arg::with_name("audio_input")
+              .short("a")
+              .long("audio-input")
+              .help("Audio input used as source when bouncing")
+              .requires("bounce"))
+        .group(ArgGroup::with_name("execution-mode")
+                .args(&["real-time", "bounce"])
+                .required(true))
+        .get_matches();
 
+    let filename = matches.value_of("INPUT").unwrap();
+    //We cannot get both at the same time thanks to the ArgGroup
+    let real_time = matches.is_present("real-time");
+    let bounce = matches.is_present("bounce");
+
+    let audiograph = parse_audiograph_from_file(filename).unwrap();
+
+    let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();
+
+    if real_time {
+        real_time_run(audiograph, basename.to_string()).unwrap();
+    }
+    else if bounce {
+        let audio_input = matches.value_of("audio_input");
+        //TODO
+    }
 }

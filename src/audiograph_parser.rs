@@ -54,7 +54,7 @@ pub struct Edge {
 #[grammar = "audiograph.pest"]
 pub struct AudiographParser;
 
-fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
+pub fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
     let audiograph = AudiographParser::parse(Rule::file, audiograph)?.next().unwrap();
 
     use pest::iterators::*;
@@ -169,7 +169,7 @@ fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule>> {
     Ok(audiograph)
 }
 
-fn parse_audiograph_from_file(filename : &str) -> Result<AudioGraph, ParseError<Rule>>  {
+pub fn parse_audiograph_from_file(filename : &str) -> Result<AudioGraph, ParseError<Rule>>  {
     let path = Path::new(filename);
     let mut file = File::open(&path).expect("Impossible to open file.");
     let mut s = String::new();

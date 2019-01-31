@@ -21,6 +21,7 @@ use rand::Rng;
 use std::io::prelude::*;
 use std::fs::File;
 
+
 const NUM_SECONDS : u64 = 5;
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: f64 = 44_100.0;
