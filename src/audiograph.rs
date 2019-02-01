@@ -3,7 +3,7 @@
 //! complex. Multiple inputs and outputs.
 //! They are also meant to be used statically: no specific resamplers
 //! on connections but a resampler is a node akin to the other ones
-use petgraph::{Graph, EdgeDirection, Directed};
+use petgraph::{Graph, EdgeDirection, Directed, Direction};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot};
@@ -293,7 +293,70 @@ impl AudioGraph {
         //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
     }
 
+    /// Adjust buffer sizes for nodes between two resamplers
+    fn buffer_size_resamplers(&mut self) {
+        let sources = self.graph.externals(Direction::Incoming).collect::<Vec<_>>();
+        let mut dfs = Dfs::empty(&self.graph);
+
+        for source in sources.iter() {
+            dfs.move_to(*source);//Change root for dfs but don't erase the visited map!
+            while let Some(node) = dfs.next(&self.graph) {
+                let class_name = self.graph[node].node_infos.class_name.as_str().to_string();// :( to_string because of immutable lifetime clashing further
+                let ratio : f64 = self.graph[node].node_infos.more.get("ratio").map_or(1.0, |v| v.parse().unwrap());
+                //Get min incoming buffer size
+                let buf_size = self.inputs(node).map(|edge| edge.weight().buffer().len()).min().unwrap_or(self.default_buffer_size());
+
+                let new_buf_size = if class_name == "resampler" {
+                    /*
+                        Some incoming edges may have not their buffer size downsampled yet (but at least one has it thanks to the dfs ordering)
+                        Some incoming edges could have not had their buffer size with the normal sample size yet if an incoming branch was downsampled (but at least one has it thanks to the dfs ordering).
+                        But actually this case does not happen, as if the path is downsampled, then thanks to dfs ordering, all the subsequent edges including the incoming one of the current node, must have been explored.
+                        If it had happened, we would have taken max in the case of ratio < 1.0
+                    */
+                    (buf_size as f64 * ratio) as usize
+                }
+                else {//We are not after a resampler so we propagate the min buffer size of the previous edges.
+                    buf_size
+                };
+                //Modify all outcoming buffer sizes
+                let mut output_edges = self.outputs_mut(node);
+                while let Some(edge) = output_edges.next_edge(&self.graph) {
+                    self.graph.edge_weight_mut(edge).unwrap().resize(new_buf_size);
+                }
+            }
+        }
+    }
+
+    /// Reset all buffer sizesto the default
+    fn reset_buffer_sizes(&mut self) {
+        let default_size = self.default_buffer_size();
+        for edge in self.graph.edge_weights_mut() {
+            edge.resize(default_size);
+        }
+    }
+
+    /// Check that all nodes are isochronous
+    fn validate_buffer_sizes(&self) -> bool {
+        self.graph.node_indices().all(|node| {
+            let mut input_edges = self.graph.edges_directed(node, Direction::Incoming);
+            let first_edge = input_edges.next().map(|e| e.weight().buffer().len());
+            let res = if let Some(size_edge) = first_edge {
+                input_edges.all(|e| e.weight().buffer().len() == size_edge)
+            } else {true};
+            res && {
+                let mut output_edges = self.graph.edges_directed(node, Direction::Outgoing);
+                let first_edge = output_edges.next().map(|e| e.weight().buffer().len());
+                if let Some(size_edge) = first_edge {
+                output_edges.all(|e| e.weight().buffer().len() == size_edge)
+                } else {true}
+            }
+        })
+    }
+
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
+        self.reset_buffer_sizes();
+        self.buffer_size_resamplers();
+        self.validate_buffer_sizes();
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
 
         self.active_component();
@@ -647,6 +710,8 @@ impl Resampler {
         resampler.check_io_node_infos(node_infos);
         resampler
     }
+
+    pub fn get_ratio(&self) -> f64 {self.resampler.src_ratio}
 }
 
 impl fmt::Display for  Resampler {

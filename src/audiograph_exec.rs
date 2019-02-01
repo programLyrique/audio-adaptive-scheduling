@@ -161,7 +161,8 @@ fn main() {
     let real_time = matches.is_present("real-time");
     let bounce = matches.is_present("bounce");
 
-    let audiograph = parse_audiograph_from_file(filename).unwrap();
+    let mut audiograph = parse_audiograph_from_file(filename).unwrap();
+    audiograph.update_schedule().expect(&format!("Audio graph in {} is cyclic!!", filename));
 
     let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();
 

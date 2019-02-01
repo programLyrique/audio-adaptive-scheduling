@@ -109,7 +109,7 @@ pub fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule
 
     let mut audiograph = AudioGraph::new(64,1);
 
-    for (i,node_infos) in nodes.into_iter().enumerate() {
+    for node_infos in nodes.into_iter() {
         let id = node_infos.id.clone();
         let node = DspNode::new(node_infos);
         let node_index = audiograph.add_node(node);
