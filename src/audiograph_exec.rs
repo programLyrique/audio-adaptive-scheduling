@@ -25,10 +25,12 @@ use clap::{Arg, App, ArgGroup};
 
 use audio_adaptive::audiograph::*;
 use audio_adaptive::audiograph_parser::*;
+use audio_adaptive::sndfile;
 
 const CHANNELS: i32 = 2;
 const SAMPLE_RATE: u32 = 44_100;
 const NB_CYCLES : u32 = 600;
+const FRAMES_PER_BUFFER : usize = 64;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TimeMonitor {
@@ -39,6 +41,11 @@ pub struct TimeMonitor {
     /// Execution time for one cycle
     pub execution_time : i64,
     pub callback_flags : audio_adaptive::effect::CallbackFlags,
+}
+
+impl Default for TimeMonitor {
+    fn default() -> Self { TimeMonitor {budget:0, deadline:0, execution_time:0,
+        callback_flags: audio_adaptive::effect::CallbackFlags::NO_FLAG} }
 }
 
 
@@ -126,6 +133,45 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String) -> Result<(), 
     try!(stream.stop());
     try!(stream.close());
 
+    Ok(())
+}
+
+fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: Option<&'a str>) -> Result<(), &'a str> {
+    let nb_frames = FRAMES_PER_BUFFER;
+
+    audio_graph.update_schedule().expect("Cycle detected");
+
+    let nb_nodes = audio_graph.nb_active_nodes();
+    let nb_edges = audio_graph.nb_edges();
+
+    //For reporting
+    let mut f = File::create(format!("{}_{}-rt.csv",time::now().rfc3339(),graph_name)).expect("Impossible to report execution times");
+    f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
+    f.write_all(b"Execution time\n").unwrap();
+
+    if let Some(audio_input) = audio_input {
+        let mut input_file = sndfile::SndFile::open(audio_input)?;
+        let nb_channels = input_file.nb_channels();
+        let samplerate = input_file.samplerate();
+
+        let buffer_size = nb_frames * nb_channels;
+        let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+        let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+
+        let mut output_file = sndfile::SndFile::open_write(graph_name, samplerate as u32, nb_channels as u32)?;
+
+        while input_file.read_float(buf_in[0].buffer_mut()) != 0  {
+            let start = PreciseTime::now();
+            audio_graph.process(&buf_in, &mut buf_out, SAMPLE_RATE);
+            output_file.write_float(buf_out[0].buffer());
+
+            //Reporting
+            let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
+            let seria = format!("{}\n", execution_time);
+            f.write_all(seria.as_bytes()).unwrap();
+        }
+
+    }
     Ok(())
 }
 
