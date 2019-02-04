@@ -101,7 +101,7 @@ pub fn parse_audiograph(audiograph : &str) -> Result<AudioGraph, ParseError<Rule
         edges.into_iter()
     }
 
-    let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().filter(|ref r| r.as_rule() != Rule::deadline).partition(|ref r| r.as_rule() == Rule::node);
+    let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().next().unwrap().into_inner().filter(|ref r| r.as_rule() != Rule::deadline).partition(|ref r| r.as_rule() == Rule::node);
 
     let nodes = nodes.into_iter().map(parse_node).collect::<Vec<_>>();
     let edges = edges.into_iter().flat_map(parse_edge).collect::<Vec<_>>();
