@@ -158,8 +158,8 @@ pub struct AudioGraph {
 
 impl AudioGraph {
     pub fn new(frames_per_buffer : u32, channels : u32) -> AudioGraph {
-        let input_node_infos = audiograph_parser::Node {class_name: "source".to_string(), .. Default::default()};
-        let output_node_infos = audiograph_parser::Node {class_name: "sink".to_string(), .. Default::default()};
+        let input_node_infos = audiograph_parser::Node {class_name: "source".to_string(), nb_outlets:1, .. Default::default()};
+        let output_node_infos = audiograph_parser::Node {class_name: "sink".to_string(), nb_inlets:1, .. Default::default()};
         let mut graph = Graph::new();
         let input_node = DspNode::from_parts(input_node_infos, Box::new( Source {nb_channels:channels as usize, frames_per_buffer}));
         let output_node = DspNode::from_parts(output_node_infos, Box::new( Sink {nb_channels:channels as usize, frames_per_buffer }));
@@ -297,8 +297,8 @@ impl AudioGraph {
                 filtered_schedule.push(*node);
             }
         }
-        println!("Schedule nodes before active components filtering:");
-        self.print_schedule(&self.schedule);
+        //println!("Schedule nodes before active components filtering:");
+        //self.print_schedule(&self.schedule);
         self.schedule = filtered_schedule;
 
 
@@ -374,19 +374,22 @@ impl AudioGraph {
             let node = self.graph.node_weight(node_index).unwrap();
             if node_index != self.input_node_index && node_index != self.output_node_index {
                 // Theoretical I/O
-                let nb_in_t = node.node_infos().nb_inlets;
-                let nb_out_t = node.node_infos().nb_outlets;
+                let nb_in_t = node.node_processor.nb_inputs() as u32;
+                let nb_out_t = node.node_processor.nb_outputs() as u32;
                 // Actually
                 let nb_in_r = self.nb_inputs(node_index);
                 let nb_out_r = self.nb_outputs(node_index);
+                //println!("In_t={};In_r={}", nb_in_t, nb_in_r);
+                //println!("Out_t={};Out_r={}", nb_out_t, nb_out_r);
                 // Check if some ports are not connected
                 if nb_in_t > nb_in_r {
                     //Collect connected input ports
                     let input_edges = self.inputs(node_index);
                     let input_ports = input_edges.map(|e| e.weight().dst_port()).collect::<HashSet<_>>();
                     //Connect them to audio source
-                    for port in 1..nb_in_t {
+                    for port in 1..(nb_in_t+1) {
                         if !input_ports.contains(&port) {//It's a non-connected port
+                            println!("Autoconnect edge from source to {} on port {}", node, port);
                             io_edges.push((self.input_node_index, 1, node_index, port));
                         }
                     }
@@ -395,10 +398,10 @@ impl AudioGraph {
                     //Collect connected output ports
                     let output_edges = self.outputs(node_index);
                     let output_ports = output_edges.map(|e| e.weight().src_port()).collect::<HashSet<_>>();
-
                     //Connect them to audio sink
-                    for port in 1..nb_out_t {
+                    for port in 1..(nb_out_t+1) {
                         if !output_ports.contains(&port) {//It's a non-connected port
+                            println!("Autoconnect edge to sink from {} on port {}", node, port);
                             io_edges.push((node_index, port, self.output_node_index, 1));
                         }
                     }
