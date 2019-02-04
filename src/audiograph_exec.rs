@@ -50,7 +50,7 @@ impl Default for TimeMonitor {
 
 
 //Launch a audio graph in real time
-fn real_time_run(mut audio_graph: AudioGraph, graph_name: String) -> Result<(), pa::Error> {
+fn real_time_run(mut audio_graph: AudioGraph, graph_name: String, cycles: u32) -> Result<(), pa::Error> {
 
     let pa = try!(pa::PortAudio::new());
 
@@ -109,7 +109,7 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String) -> Result<(), 
                 callback_flags: audio_adaptive::effect::CallbackFlags::from_callback_flags(flags),
             };
             tx_monit.send(times).unwrap();
-            if nb_cycles >= NB_CYCLES {
+            if nb_cycles >= cycles {
                 pa::Complete
             }
             else {
@@ -136,7 +136,7 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String) -> Result<(), 
     Ok(())
 }
 
-fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: Option<&'a str>) -> Result<(), &'a str> {
+fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: Option<&'a str>, cycles: u32) -> Result<(), &'a str> {
     let nb_frames = FRAMES_PER_BUFFER;
 
     audio_graph.update_schedule().expect("Cycle detected");
@@ -149,28 +149,34 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
     f.write_all(format!("{} {}\n", nb_nodes, nb_edges).as_bytes()).unwrap();
     f.write_all(b"Execution time\n").unwrap();
 
-    if let Some(audio_input) = audio_input {
-        let mut input_file = sndfile::SndFile::open(audio_input)?;
-        let nb_channels = input_file.nb_channels();
-        let samplerate = input_file.samplerate();
+    let mut nb_channels = CHANNELS as usize;
+    let mut samplerate = SAMPLE_RATE;
+    let mut nb_cycles = 0;
 
-        let buffer_size = nb_frames * nb_channels;
-        let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
-        let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+    let mut advance : Box<dyn FnMut(&mut [f32]) -> u32> = if let Some(audio_input_name) = audio_input {
+        let mut input_file = sndfile::SndFile::open(audio_input_name)?;
+        nb_channels = input_file.nb_channels();
+        samplerate = input_file.samplerate() as u32;
+        Box::new(move |buf| {input_file.read_float(buf) as u32})
+    } else {
+        Box::new(|_buf| { nb_cycles += 1; cycles - nb_cycles })
+    };
 
-        let mut output_file = sndfile::SndFile::open_write(graph_name, samplerate as u32, nb_channels as u32)?;
+    let buffer_size = nb_frames * nb_channels;
+    let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+    let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
 
-        while input_file.read_float(buf_in[0].buffer_mut()) != 0  {
-            let start = PreciseTime::now();
-            audio_graph.process(&buf_in, &mut buf_out, SAMPLE_RATE);
-            output_file.write_float(buf_out[0].buffer());
+    let mut output_file = sndfile::SndFile::open_write(graph_name, samplerate, nb_channels as u32)?;
 
-            //Reporting
-            let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
-            let seria = format!("{}\n", execution_time);
-            f.write_all(seria.as_bytes()).unwrap();
-        }
+    while  advance(buf_in[0].buffer_mut()) != 0  {
+        let start = PreciseTime::now();
+        audio_graph.process(&buf_in, &mut buf_out, samplerate);
+        output_file.write_float(buf_out[0].buffer());
 
+        //Reporting
+        let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
+        let seria = format!("{}\n", execution_time);
+        f.write_all(seria.as_bytes()).unwrap();
     }
     Ok(())
 }
@@ -197,6 +203,13 @@ fn main() {
               .long("audio-input")
               .help("Audio input used as source when bouncing")
               .requires("bounce"))
+          .arg(Arg::with_name("cycles")
+                .short("c")
+                .long("cycles")
+                .value_name("NbCycles")
+                .takes_value(true)
+                .conflicts_with("audio_input")
+                .help("Number of cycles to execute the audio graph"))
         .group(ArgGroup::with_name("execution-mode")
                 .args(&["real-time", "bounce"])
                 .required(true))
@@ -206,6 +219,7 @@ fn main() {
     //We cannot get both at the same time thanks to the ArgGroup
     let real_time = matches.is_present("real-time");
     let bounce = matches.is_present("bounce");
+    let nb_cycles : u32 = matches.value_of("cycles").map_or(NB_CYCLES, |v| v.parse().unwrap_or(NB_CYCLES));
 
     let mut audiograph = parse_audiograph_from_file(filename).unwrap();
     audiograph.update_schedule().expect(&format!("Audio graph in {} is cyclic!!", filename));
@@ -213,7 +227,7 @@ fn main() {
     let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();
 
     if real_time {
-        real_time_run(audiograph, basename.to_string()).unwrap();
+        real_time_run(audiograph, basename.to_string(), nb_cycles).unwrap();
     }
     else if bounce {
         let audio_input = matches.value_of("audio_input");
