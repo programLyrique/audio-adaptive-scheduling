@@ -156,8 +156,8 @@ mod tests {
     fn build_audiograph_test() {
         let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2).expect("Impossible to open file.");
         println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
-        assert!(audiograph.nb_nodes() == 3);
-        assert!(audiograph.nb_edges() == 3);
+        assert!(audiograph.nb_nodes() == 5);
+        assert!(audiograph.nb_edges() == 6);
     }
 
     #[test]
