@@ -7,7 +7,7 @@ use petgraph::{Graph, EdgeDirection, Directed, Direction};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot};
-use petgraph::visit::{Reversed, Dfs, VisitMap, Walker};
+use petgraph::visit::{Reversed, Dfs, VisitMap};
 use petgraph;
 
 use std::collections::HashSet;
@@ -83,10 +83,10 @@ impl DspNode {
             "resampler" => Box::new(Resampler::from_node_infos(&node_infos)),
             _ => {//We replace it by a default effect
                 if node_infos.nb_inlets == 0 && node_infos.nb_outlets == 1 {
-                    Box::new(Oscillator::from_node_infos(&node_infos))
+                    Box::new(Oscillator::new(0., 440, 1.))
                 }
                 else if node_infos.nb_inlets == 1 && node_infos.nb_outlets == 1 {
-                    Box::new(Modulator::from_node_infos(&node_infos))
+                    Box::new(Modulator::new(0.,445,1.))
                 }
                 else if node_infos.nb_outlets == 0 {
                     panic!("Not handled yet!")
@@ -314,6 +314,7 @@ impl AudioGraph {
             dfs.move_to(*source);//Change root for dfs but don't erase the visited map!
             while let Some(node) = dfs.next(&self.graph) {
                 let class_name = self.graph[node].node_infos.class_name.as_str().to_string();// :( to_string because of immutable lifetime clashing further
+
                 let ratio : f64 = self.graph[node].node_infos.more.get("ratio").map_or(1.0, |v| v.parse().unwrap());
                 //Get min incoming buffer size
                 let buf_size = self.inputs(node).map(|edge| edge.weight().buffer().len()).min().unwrap_or(self.default_buffer_size());

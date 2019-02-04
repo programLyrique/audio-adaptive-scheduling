@@ -176,7 +176,7 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
     let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
     let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
 
-    let mut output_file = sndfile::SndFile::open_write(graph_name, samplerate, nb_channels as u32)?;
+    let mut output_file = sndfile::SndFile::open_write(graph_name + ".wav", samplerate, nb_channels as u32)?;
 
     while  advance(buf_in[0].buffer_mut()) != 0  {
         let start = PreciseTime::now();

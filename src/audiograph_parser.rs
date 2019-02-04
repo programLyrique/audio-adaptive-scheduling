@@ -65,8 +65,8 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         //Attributes
         for attribute in inner_rules {
             let mut attr = attribute.into_inner();
-            let id = attr.next().unwrap().as_str();
-            let v = attr.next().unwrap().as_str();
+            let id = attr.next().unwrap().as_str().trim_matches('\"');
+            let v = attr.next().unwrap().as_str().trim_matches('\"');
             match id {
                 "in" => node.nb_inlets = v.parse().unwrap(),
                 "out" => node.nb_outlets = v.parse().unwrap(),
@@ -74,7 +74,7 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
                 "kind" => node.class_name = v.to_string(),
                 "wcet" => node.wcet = Some(v.parse().unwrap()),
                 "volume" => node.volume = v.parse().unwrap(),
-                _ => {node.more.insert(id.to_string(), v.to_string()).unwrap();},
+                _ => {node.more.insert(id.to_string(), v.to_string());},
             }
         }
         node
@@ -83,16 +83,17 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
     use std::vec::IntoIter;
 
     fn parse_edge(pair : Pair<Rule>) -> IntoIter<Edge> {
-        let mut inner_rules = pair.into_inner().tuples();
-        let (src_id_r, src_port_r) = inner_rules.next().unwrap();
-        let mut src_id = src_id_r.as_str().to_string();
-        let mut src_port = src_port_r.as_str().parse().unwrap();
+        let mut inner_rules = pair.into_inner();
+        let mut port_ident = inner_rules.next().unwrap().into_inner();
+        let mut src_id = port_ident.next().unwrap().as_str().to_string();
+        let mut src_port = port_ident.next().unwrap().as_str().parse().unwrap();
 
         let mut edges = Vec::new();
 
-        for (mut dst_id_r, mut dst_port_r) in inner_rules {
-            let dst_id = dst_id_r.as_str().to_string();
-            let dst_port = dst_port_r.as_str().parse().unwrap();
+        for inner_rule in inner_rules {
+            port_ident = inner_rule.into_inner();
+            let dst_id = port_ident.next().unwrap().as_str().to_string();
+            let dst_port = port_ident.next().unwrap().as_str().parse().unwrap();
             edges.push(Edge {src_id, src_port, dst_id : dst_id.clone(), dst_port});
             src_id = dst_id;
             src_port = dst_port;
@@ -100,8 +101,12 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         edges.into_iter()
     }
 
-    let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().next().unwrap().into_inner()
-            .filter(|ref r| r.as_rule() != Rule::deadline).partition(|ref r| r.as_rule() == Rule::node);
+    //let to_print = audiograph.clone().into_inner().flat_map()
+
+    let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().flat_map(|r| r.into_inner())
+            .filter(|ref r| r.as_rule() != Rule::deadline)
+            //.inspect(|x| println!("Statement: {:?}.", x))
+            .partition(|ref r| r.as_rule() == Rule::node);
 
     let nodes = nodes.into_iter().map(parse_node).collect::<Vec<_>>();
     let edges = edges.into_iter().flat_map(parse_edge).collect::<Vec<_>>();
@@ -152,7 +157,7 @@ mod tests {
         let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2).expect("Impossible to open file.");
         println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
         assert!(audiograph.nb_nodes() == 3);
-        assert!(audiograph.nb_edges() == 1);
+        assert!(audiograph.nb_edges() == 3);
     }
 
     #[test]
