@@ -118,8 +118,8 @@ pub trait AudioEffect : fmt::Display {
     fn nb_outputs(&self) -> usize;
 
     fn check_io_node_infos(&self, node_infos: &audiograph_parser::Node) {
-        assert!(node_infos.nb_inlets as usize == self.nb_inputs());
-        assert!(node_infos.nb_outlets as usize == self.nb_outputs());
+        assert_eq!(node_infos.nb_inlets as usize, self.nb_inputs());
+        assert_eq!(node_infos.nb_outlets as usize, self.nb_outputs());
     }
 }
 
@@ -212,12 +212,14 @@ impl AudioGraph {
     pub fn add_node(&mut self, node : DspNode) -> NodeIndex {
         let nb_inputs = node.node_processor.nb_inputs();
         let nb_outputs = node.node_processor.nb_outputs();
-        if nb_inputs > self.input_edges.len() {
-            //println!("Input: old={} new={}", self.input_edges.len(), nb_inputs);
-            self.input_edges.resize(nb_inputs, DspEdge::new(1, 1, self.size));}
-        if nb_outputs > self.output_edges.len() {
-            //println!("Output: old={} new={}", self.output_edges.len(), nb_outputs);
-            self.output_edges.resize(nb_outputs, DspEdge::new(1, 1, self.size));}
+        let max_nb = std::cmp::max(nb_inputs, nb_outputs);
+
+        if max_nb > self.input_edges.len() {
+            //println!("Input: old={} new={}", self.input_edges.len(), max_nb);
+            self.input_edges.resize(max_nb, DspEdge::new(1, 1, self.size));}
+        if max_nb > self.output_edges.len() {
+            //println!("Output: old={} new={}", self.output_edges.len(), max_nb);
+            self.output_edges.resize(max_nb, DspEdge::new(1, 1, self.size));}
         self.graph.add_node(node)
     }
 
@@ -300,8 +302,6 @@ impl AudioGraph {
         //println!("Schedule nodes before active components filtering:");
         //self.print_schedule(&self.schedule);
         self.schedule = filtered_schedule;
-
-
         //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
     }
 
@@ -462,9 +462,9 @@ impl AudioEffect for AudioGraph {
     fn process(& mut self, inputs: &[DspEdge], outputs: &mut [DspEdge], samplerate : u32) {
         let interlaced_size = (self.channels * self.frames_per_buffer) as usize;
         let input_buffer = &inputs[0].buffer();
-        assert!(input_buffer.len()  == interlaced_size);
+        assert_eq!(input_buffer.len(), interlaced_size);
         let output_buffer = &mut outputs[0].buffer_mut();
-        assert!(output_buffer.len()  == interlaced_size );
+        assert_eq!(output_buffer.len(), interlaced_size );
 
         // To prevent
         if self.has_source {
@@ -576,8 +576,8 @@ impl fmt::Display for  Oscillator {
 
 impl AudioEffect for Oscillator {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
-        debug_assert!(inputs.len() == self.nb_inputs());
-        debug_assert!(outputs.len() == self.nb_outputs());
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
 
         for sample in outputs[0].buffer_mut().iter_mut() {
             *sample = sine_wave(self.phase, self.volume);
@@ -616,9 +616,9 @@ impl fmt::Display for  Modulator {
 
 impl AudioEffect for Modulator {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
-        debug_assert!(inputs.len() == self.nb_inputs());
-        debug_assert!(outputs.len() == self.nb_outputs());
-        debug_assert!(outputs[0].buffer().len() == inputs[0].buffer().len());
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
+        debug_assert_eq!(outputs[0].buffer().len(), inputs[0].buffer().len());
 
         for (sample_out, sample_in) in outputs[0].buffer_mut().iter_mut().zip(inputs[0].buffer().iter()) {
             *sample_out = *sample_in * sine_wave(self.phase, self.volume);
@@ -666,8 +666,8 @@ fn mixer(buffer: &mut [f32], input_buffer: & [f32]) {
 
 impl AudioEffect for InputsOutputsAdaptor {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
-        debug_assert!(inputs.len() == self.nb_inputs());
-        debug_assert!(outputs.len() == self.nb_outputs());
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
         debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
 
         if self.nb_outputs > self.nb_inputs {
@@ -705,11 +705,11 @@ impl fmt::Display for  Sink {
 
 impl AudioEffect for Sink {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
-        debug_assert!(inputs.len() == self.nb_inputs());
-        debug_assert!(outputs.len() == self.nb_outputs());
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
 
         let sink_buffer = outputs[0].buffer_mut();
-        assert!(sink_buffer.len() == self.nb_channels * self.frames_per_buffer as usize);
+        assert_eq!(sink_buffer.len(), self.nb_channels * self.frames_per_buffer as usize);
 
         //We have to interlace the ouput buffers (one per channel) into the sink buffer (output buffer of the audio API)
         for (i,chunk) in sink_buffer.chunks_mut(self.nb_channels).enumerate() {
@@ -736,12 +736,12 @@ impl fmt::Display for  Source {
 
 
 impl AudioEffect for Source {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], _samplerate : u32) {
         debug_assert!(inputs.len() == self.nb_inputs());
         debug_assert!(outputs.len() == self.nb_outputs());
 
         let source_buffer = inputs[0].buffer();
-        assert!(source_buffer.len() == self.nb_channels * self.frames_per_buffer as usize);
+        assert_eq!(source_buffer.len(), self.nb_channels * self.frames_per_buffer as usize);
 
         //We have to desinterlace the source buffer (input buffer of the audio API) into the input buffers (one per channel)
         for (i,chunk) in source_buffer.chunks(self.nb_channels).enumerate() {
@@ -794,8 +794,8 @@ impl fmt::Display for  Resampler {
 
 impl AudioEffect for Resampler {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
-        debug_assert!(inputs.len() == self.nb_inputs());
-        debug_assert!(outputs.len() == self.nb_outputs());
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
 
         self.resampler.resample(inputs[0].buffer(), outputs[0].buffer_mut()).unwrap();
 
