@@ -27,7 +27,7 @@ use audio_adaptive::audiograph::*;
 use audio_adaptive::audiograph_parser::*;
 use audio_adaptive::sndfile;
 
-const CHANNELS: i32 = 2;
+const CHANNELS: i32 = 1;
 const SAMPLE_RATE: u32 = 44_100;
 const NB_CYCLES : u32 = 600;
 const FRAMES_PER_BUFFER : usize = 64;
@@ -54,7 +54,7 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String, cycles: u32, m
 
     let pa = try!(pa::PortAudio::new());
 
-    audio_graph.update_schedule().expect("Cycle detected");
+    //audio_graph.update_schedule().expect("Cycle detected");//Already done when parsing
 
     let nb_nodes = audio_graph.nb_active_nodes();
     let nb_edges = audio_graph.nb_edges();
@@ -144,7 +144,7 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String, cycles: u32, m
 fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: Option<&'a str>, cycles: u32, monitor: bool) -> Result<(), &'a str> {
     let nb_frames = FRAMES_PER_BUFFER;
 
-    audio_graph.update_schedule().expect("Cycle detected");
+    //audio_graph.update_schedule().expect("Cycle detected");Already done when parsing
 
     let nb_nodes = audio_graph.nb_active_nodes();
     let nb_edges = audio_graph.nb_edges();
@@ -238,11 +238,13 @@ fn main() {
     let nb_cycles : u32 = matches.value_of("cycles").map_or(NB_CYCLES, |v| v.parse().unwrap_or(NB_CYCLES));
     let monitor = matches.is_present("monitor");
 
-    let mut audiograph = parse_audiograph_from_file(filename).unwrap();
+    let mut audiograph = parse_audiograph_from_file(filename, FRAMES_PER_BUFFER, 1).unwrap();
     audiograph.update_schedule().expect(&format!("Audio graph in {} is cyclic!!", filename));
 
     let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();
 
+    println!("Starting processing");
+    let start = PreciseTime::now();
     if real_time {
         real_time_run(audiograph, basename.to_string(), nb_cycles, monitor).unwrap();
     }
@@ -250,4 +252,6 @@ fn main() {
         let audio_input = matches.value_of("audio_input");
         bounce_run(audiograph, basename.to_string(), audio_input, nb_cycles, monitor).unwrap();
     }
+    let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
+    println!("End processing in {}s", execution_time as f64 / 1_000_000.0);
 }

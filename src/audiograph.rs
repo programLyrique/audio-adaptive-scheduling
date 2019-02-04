@@ -7,8 +7,10 @@ use petgraph::{Graph, EdgeDirection, Directed, Direction};
 use petgraph::graph::{NodeIndex, EdgeIndex, Edges, WalkNeighbors};
 use petgraph::algo::toposort;
 use petgraph::dot::{Dot};
-use petgraph::visit::{Reversed, Dfs, VisitMap};
+use petgraph::visit::{Reversed, Dfs, VisitMap, Walker};
 use petgraph;
+
+use std::collections::HashSet;
 
 use std::fmt;
 
@@ -156,23 +158,24 @@ pub struct AudioGraph {
 
 impl AudioGraph {
     pub fn new(frames_per_buffer : u32, channels : u32) -> AudioGraph {
-        let input_node_infos = audiograph_parser::Node::new();
-        let output_node_infos = audiograph_parser::Node::new();
+        let input_node_infos = audiograph_parser::Node {class_name: "source".to_string(), .. Default::default()};
+        let output_node_infos = audiograph_parser::Node {class_name: "sink".to_string(), .. Default::default()};
         let mut graph = Graph::new();
         let input_node = DspNode::from_parts(input_node_infos, Box::new( Source {nb_channels:channels as usize, frames_per_buffer}));
         let output_node = DspNode::from_parts(output_node_infos, Box::new( Sink {nb_channels:channels as usize, frames_per_buffer }));
         let input_node_index = graph.add_node(input_node);
         let output_node_index = graph.add_node(output_node);
+        let size = frames_per_buffer as usize;
 
         AudioGraph {graph, schedule : Vec::new(),
-            size : frames_per_buffer as usize,
+            size,
             frames_per_buffer,
             channels,
             input_node_index,
-            input_edges: Vec::new(),
+            input_edges: vec![DspEdge::new(1, 1, size);channels as usize],
             has_source: false,
             output_node_index,
-            output_edges : Vec::new(),
+            output_edges : vec![DspEdge::new(1, 1, size);channels as usize],
         }
     }
 
@@ -209,8 +212,12 @@ impl AudioGraph {
     pub fn add_node(&mut self, node : DspNode) -> NodeIndex {
         let nb_inputs = node.node_processor.nb_inputs();
         let nb_outputs = node.node_processor.nb_outputs();
-        if nb_inputs > self.input_edges.len() {self.input_edges.resize(nb_inputs, DspEdge::new(1, 1, self.size));}
-        if nb_outputs > self.output_edges.len() {self.output_edges.resize(nb_outputs, DspEdge::new(1, 1, self.size));}
+        if nb_inputs > self.input_edges.len() {
+            //println!("Input: old={} new={}", self.input_edges.len(), nb_inputs);
+            self.input_edges.resize(nb_inputs, DspEdge::new(1, 1, self.size));}
+        if nb_outputs > self.output_edges.len() {
+            //println!("Output: old={} new={}", self.output_edges.len(), nb_outputs);
+            self.output_edges.resize(nb_outputs, DspEdge::new(1, 1, self.size));}
         self.graph.add_node(node)
     }
 
@@ -278,17 +285,22 @@ impl AudioGraph {
     /// Remove nodes not connected to the sink from the schedule
     fn active_component(&mut self) {
         let rev_graph = Reversed(&self.graph);
-        let dfs = Dfs::new(&rev_graph, self.output_node_index);
+        let mut dfs = Dfs::new(&rev_graph, self.output_node_index);
+        while let Some(_) = dfs.next(&rev_graph) {};//Just traverse the graph to populate dfs.discovered
 
-        println!("{:?}", dfs.discovered.is_visited(&self.input_node_index));
+        //println!("Source is connected? {:?}", dfs.discovered.is_visited(&self.input_node_index));
 
         let mut filtered_schedule = Vec::with_capacity(self.schedule.len());
+
         for node in self.schedule.iter() {
             if dfs.discovered.is_visited(node) {
                 filtered_schedule.push(*node);
             }
         }
+        println!("Schedule nodes before active components filtering:");
+        self.print_schedule(&self.schedule);
         self.schedule = filtered_schedule;
+
 
         //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
     }
@@ -327,7 +339,7 @@ impl AudioGraph {
         }
     }
 
-    /// Reset all buffer sizesto the default
+    /// Reset all buffer sizes to the default
     fn reset_buffer_sizes(&mut self) {
         let default_size = self.default_buffer_size();
         for edge in self.graph.edge_weights_mut() {
@@ -353,6 +365,63 @@ impl AudioGraph {
         })
     }
 
+    /// Autoconnect ports without edges to sources and sinks
+    pub fn autoconnect(&mut self) {
+        //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
+        //TODO: move to a method of audiograph?
+        let mut io_edges = Vec::new();
+        for node_index in self.graph.node_indices() {
+            let node = self.graph.node_weight(node_index).unwrap();
+            if node_index != self.input_node_index && node_index != self.output_node_index {
+                // Theoretical I/O
+                let nb_in_t = node.node_infos().nb_inlets;
+                let nb_out_t = node.node_infos().nb_outlets;
+                // Actually
+                let nb_in_r = self.nb_inputs(node_index);
+                let nb_out_r = self.nb_outputs(node_index);
+                // Check if some ports are not connected
+                if nb_in_t > nb_in_r {
+                    //Collect connected input ports
+                    let input_edges = self.inputs(node_index);
+                    let input_ports = input_edges.map(|e| e.weight().dst_port()).collect::<HashSet<_>>();
+                    //Connect them to audio source
+                    for port in 1..nb_in_t {
+                        if !input_ports.contains(&port) {//It's a non-connected port
+                            io_edges.push((self.input_node_index, 1, node_index, port));
+                        }
+                    }
+                }
+                if nb_out_t > nb_out_r {
+                    //Collect connected output ports
+                    let output_edges = self.outputs(node_index);
+                    let output_ports = output_edges.map(|e| e.weight().src_port()).collect::<HashSet<_>>();
+
+                    //Connect them to audio sink
+                    for port in 1..nb_out_t {
+                        if !output_ports.contains(&port) {//It's a non-connected port
+                            io_edges.push((node_index, port, self.output_node_index, 1));
+                        }
+                    }
+                }
+            }
+        }
+        //Finally add the edges
+        for edge in io_edges.into_iter() {
+            let (src_id, src_port, dst_id, dst_port) = edge;
+            self.add_connection(src_id, src_port, dst_id, dst_port);
+        }
+
+    }
+
+    pub fn print_schedule(&self, schedule: & [NodeIndex]) {
+        print!("The schedule is: ", );
+        for node_index in schedule.iter() {
+            let node = self.graph.node_weight(*node_index).unwrap();
+            print!("{} {} ", node, if node.node_infos.class_name == "sink" {""} else {"->"});
+        }
+        println!("");
+    }
+
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
         self.reset_buffer_sizes();
         self.buffer_size_resamplers();
@@ -363,11 +432,7 @@ impl AudioGraph {
 
         if self.schedule.len() <= 100
         {
-            print!("The schedule is: ", );
-            for node_index in self.schedule.iter() {
-                let node = self.graph.node_weight(*node_index).unwrap();
-                print!("{} -> ", node);
-            }
+            self.print_schedule(&self.schedule);
         }
 
         Ok(())
@@ -400,6 +465,7 @@ impl AudioEffect for AudioGraph {
 
         // To prevent
         if self.has_source {
+            //println!("Executing {}", self.graph.node_weight(self.input_node_index).unwrap().node_processor);
             //Prepare input
             self.input_edges[0].resize(interlaced_size);
             self.input_edges[0].buffer_mut().copy_from_slice(input_buffer);
@@ -419,6 +485,7 @@ impl AudioEffect for AudioGraph {
 
         //We assume that sink is the last node in the schedule and execute it separately
         for node in self.schedule[0..self.schedule.len() - 1].iter() {
+            //println!("Executing {}", self.graph.node_weight(*node).unwrap().node_processor);
 
             let (nb_inputs, nb_outputs)  = {
                 let n = &self.graph.node_weight(*node).unwrap().node_processor;
@@ -447,6 +514,7 @@ impl AudioEffect for AudioGraph {
         }
 
         // Sink
+        //println!("Executing {}", self.graph.node_weight(self.output_node_index).unwrap().node_processor);
         //Prepare inputs
         //Quite inefficient, with allocating. Rather use a fixed vec with max number of inputs and outputs and a buffer pool
         // Or just use &[&DspEdge]??
@@ -570,7 +638,7 @@ pub struct InputsOutputsAdaptor {
 impl InputsOutputsAdaptor {
     pub fn new(nb_inputs: usize, nb_outputs: usize) -> InputsOutputsAdaptor {
         assert!(nb_inputs % nb_outputs == 0 || nb_outputs % nb_inputs == 0 );
-        let stride = if nb_outputs > nb_inputs {nb_outputs % nb_inputs} else {nb_inputs % nb_outputs};
+        let stride = if nb_outputs > nb_inputs {nb_outputs / nb_inputs} else {nb_inputs / nb_outputs};
         InputsOutputsAdaptor {nb_inputs, nb_outputs, stride}
     }
 
@@ -583,7 +651,7 @@ impl InputsOutputsAdaptor {
 
 impl fmt::Display for  InputsOutputsAdaptor {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "adaptor({}, {})", self.nb_inputs, self.nb_outputs)
+        write!(f, "adaptor({}, {}, {})", self.nb_inputs, self.nb_outputs, self.stride)
     }
 }
 
