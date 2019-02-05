@@ -31,6 +31,9 @@ def quality(base, degraded):
     assert(sr1 == sr2)
     return compare_specto(bf, sr1, df, sr2)
 
+def load_file(filename):
+    librosa.load(base, sr=None)
+
 if __name__ == "__main__":
     basefile = sys.argv[1]
     degradedfile = sys.argv[2]
