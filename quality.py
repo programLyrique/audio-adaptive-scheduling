@@ -9,16 +9,6 @@ import librosa
 import numpy as np
 
 
-basefile = sys.argv[1]
-degradedfile = sys.argv[2]
-
-print("Comparing basefile ", basefile, " and degraded file ", degradedfile)
-
-bf,sr1 = librosa.load(basefile, sr=None)
-df,sr2 = librosa.load(basefile, sr=None)
-
-assert(sr1 == sr2)
-
 # See here: http://librosa.github.io/librosa/generated/librosa.core.perceptual_weighting.html
 def perceptual_cqt(y,sr):
     C = np.abs(librosa.cqt(y, sr=sr, fmin=librosa.note_to_hz('A1')))
@@ -28,9 +18,23 @@ def perceptual_cqt(y,sr):
     # because A-weighting does not cut enough high frequencies
     return perceptual_CQT
 
-base_pcat = perceptual_cqt(bf, sr1)
-degraded_pcat = perceptual_cqt(df, sr2)
+def compare_specto(y1, sr1, y2, sr2):
+    base_pcat = perceptual_cqt(y1, sr1)
+    degraded_pcat = perceptual_cqt(y2, sr2)
+    # To get a quality between 0 and 1, with 0 the worst one and 1 the best one.
+    quality = np.exp(- np.linalg.norm(base_pcat - degraded_pcat))
+    return quality
 
-quality = np.exp(- np.linalg.norm(base_pcat - degraded_pcat))
+def quality(base, degraded):
+    bf,sr1 = librosa.load(base, sr=None)
+    df,sr2 = librosa.load(degraded, sr=None)
+    assert(sr1 == sr2)
+    return compare_specto(bf, sr1, df, sr2)
 
-print("Quality is ", quality)
+if __name__ == "__main__":
+    basefile = sys.argv[1]
+    degradedfile = sys.argv[2]
+
+    print("Comparing basefile ", basefile, " and degraded file ", degradedfile)
+
+    print("Quality is ", quality(basefile, degradedfile))
