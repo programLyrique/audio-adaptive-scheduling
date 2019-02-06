@@ -8,7 +8,7 @@ char = {
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-ident = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-")* }
 port = {ASCII_DIGIT+}
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
