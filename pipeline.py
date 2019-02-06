@@ -54,12 +54,16 @@ def process_graph(graph):
         pass
     os.chdir(dirname)
     tqdm.write("Enumerating degraded versions")
-    subprocess.run([graph_enum, "-w", "-x", "-e", graph])
+    # Export both as .ag and as .dot
+    subprocess.run([graph_enum, "-w", "-x", "-ed", graph], check=True)
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
-        subprocess.run([graph_exec, "-m", "-b", graph])
+        tqdm.write(graph)
+        subprocess.run([graph_exec, "-m", "-b", graph], check=True)
     # Get resulting audiofiles
     audiofiles = glob.glob("*.wav")
+    audiofiles.sort()# Number 0 is always the non-degraded file
+    tqdm.write(str(audiofiles))
     non_degraded = audiofiles.pop(0)
     tqdm.write("Non degraded file is: " + non_degraded)
     tqdm.write("Comparing degraded versions with non-degraded one.")
@@ -69,7 +73,7 @@ def process_graph(graph):
         y,sr = quality.load_file(degraded)
         qualities[degraded] = quality.compare_specto(y_nd, sr_nd, y, sr)
     os.chdir("..")
-    qualities
+    return qualities
 
 if args.graph:
     for graph in tqdm(args.graph):

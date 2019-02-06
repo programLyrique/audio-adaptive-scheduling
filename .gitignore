@@ -7,3 +7,4 @@ experiments
 __pycache__
 experiments*
 *.wav
+simple_graph-degraded/

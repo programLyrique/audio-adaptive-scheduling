@@ -21,8 +21,10 @@ def perceptual_cqt(y,sr):
 def compare_specto(y1, sr1, y2, sr2):
     base_pcat = perceptual_cqt(y1, sr1)
     degraded_pcat = perceptual_cqt(y2, sr2)
+    size = len(base_pcat)
     # To get a quality between 0 and 1, with 0 the worst one and 1 the best one.
-    quality = np.exp(- np.linalg.norm(base_pcat - degraded_pcat))
+    distance = np.linalg.norm(base_pcat - degraded_pcat)
+    quality = np.exp(- distance / float(size))
     return quality
 
 def quality(base, degraded):
@@ -32,7 +34,7 @@ def quality(base, degraded):
     return compare_specto(bf, sr1, df, sr2)
 
 def load_file(filename):
-    librosa.load(base, sr=None)
+    return librosa.load(filename, sr=None)
 
 if __name__ == "__main__":
     basefile = sys.argv[1]
