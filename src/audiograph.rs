@@ -303,6 +303,11 @@ impl AudioGraph {
         //self.print_schedule(&self.schedule);
         self.schedule = filtered_schedule;
         //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
+        if self.schedule.contains(&self.input_node_index) {
+            self.has_source = true;
+            assert!(self.schedule[0] == self.input_node_index);
+            self.schedule.remove(0);
+        }
     }
 
     /// Adjust buffer sizes for nodes between two resamplers
@@ -369,7 +374,6 @@ impl AudioGraph {
     /// Autoconnect ports without edges to sources and sinks
     pub fn autoconnect(&mut self) {
         //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
-        //TODO: move to a method of audiograph?
         let mut io_edges = Vec::new();
         for node_index in self.graph.node_indices() {
             let node = self.graph.node_weight(node_index).unwrap();
@@ -495,11 +499,27 @@ impl AudioEffect for AudioGraph {
                 let n = &self.graph.node_weight(*node).unwrap().node_processor;
                 (n.nb_inputs(), n.nb_outputs())
             };
+
+            //Fix input_edges and output_edges buffer sizes.
+            let mut inputs = self.inputs_mut(*node);
+            let mut i = 0;
+            while let Some(edge) = inputs.next_edge(&self.graph) {
+                self.input_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+                i += 1;
+            }
+            let mut outputs = self.outputs_mut(*node);
+            let mut i = 0;
+            while let Some(edge) = outputs.next_edge(&self.graph) {
+                self.output_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+                i += 1;
+            }
+
             //Prepare inputs
             // Or just use &[&DspEdge]??
             let mut edges = self.inputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = edges.next_edge(&self.graph) {
+                debug_assert_eq!(self.graph.edge_weight(edge).unwrap().buffer().len(), self.input_edges[i].buffer().len());
                 self.input_edges[i].buffer_mut().copy_from_slice(self.graph.edge_weight(edge).unwrap().buffer());
                 i += 1;
             }
@@ -512,6 +532,8 @@ impl AudioEffect for AudioGraph {
             let mut edges = self.outputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = edges.next_edge(&self.graph) {
+                debug_assert_eq!(self.graph.edge_weight(edge).unwrap().buffer().len(), self.output_edges[i].buffer().len());
+                //The size of a DspEdge is the right one (computed at scheduling)
                 self.graph.edge_weight_mut(edge).unwrap().buffer_mut().copy_from_slice(self.output_edges[i].buffer());
                 i += 1;
             }
@@ -794,9 +816,16 @@ impl fmt::Display for  Resampler {
 
 
 impl AudioEffect for Resampler {
+    //TODO: We should propagate the samplerate argument for the following nodes in the schedule.
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
+
+        // Already done in the process method so outputs should already be the right size
+        let new_buf_size = (self.resampler.src_ratio * inputs[0].buffer().len() as f64) as usize;
+        assert_eq!(outputs[0].buffer().len(), new_buf_size);
+        outputs[0].resize(new_buf_size);
+
 
         self.resampler.resample(inputs[0].buffer(), outputs[0].buffer_mut()).unwrap();
 
