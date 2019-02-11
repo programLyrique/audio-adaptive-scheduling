@@ -21,7 +21,7 @@ def perceptual_cqt(y,sr):
 def compare_specto(y1, sr1, y2, sr2):
     base_pcat = perceptual_cqt(y1, sr1)
     degraded_pcat = perceptual_cqt(y2, sr2)
-    size = len(base_pcat)
+    size = len(base_pcat)**2.
     # To get a quality between 0 and 1, with 0 the worst one and 1 the best one.
     distance = np.linalg.norm(base_pcat - degraded_pcat)
     quality = np.exp(- distance / float(size))

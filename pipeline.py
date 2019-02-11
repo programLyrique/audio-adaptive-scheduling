@@ -14,6 +14,7 @@ import os
 import quality
 from tqdm import tqdm
 import glob
+import csv
 
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
@@ -42,6 +43,20 @@ finally:
     print("Graph execution with: ", graph_exec)
     print("Graph enumeration with: ", graph_enum)
 
+def get_costs(csvname):
+    """Get csv file with execution times and compute average execution time
+        for a cycle as well as total execution time"""
+    with open(csvname, "r") as csvfile:
+        csvfile.readline() # To remove first line where there are number of ndoes and edges
+        csvreader = csv.DictReader(csvfile, delimiter='\t')
+        total=0.
+        nb_rows=0
+        for row in csvreader:
+            total += float(row["Execution time"])
+            nb_rows += 1
+        return total / float(nb_rows), total
+
+
 
 def process_graph(graph):
     tqdm.write("Processing " + graph, end=" ")
@@ -55,11 +70,19 @@ def process_graph(graph):
     os.chdir(dirname)
     tqdm.write("Enumerating degraded versions")
     # Export both as .ag and as .dot
-    subprocess.run([graph_enum, "-w", "-x", "-ed", graph], check=True)
+    subprocess.run([graph_enum, "-w", "-x", "-edr", graph], check=True)
+    costs={}
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
         tqdm.write(graph)
         subprocess.run([graph_exec, "-m", "-b", graph], check=True)
+        # Get execution times for reports (-m option)
+        basename,_ = os.path.splitext(os.path.basename(graph))
+        reports = glob.glob("*"+basename + "*.csv")
+        reports.sort(reverse=True, key= lambda f: os.path.getmtime(f))
+        csvfile = reports[0]
+        tqdm.write("Retrieving monitoring info from "+ csvfile)
+        costs[basename] = get_costs(csvfile)
     # Get resulting audiofiles
     audiofiles = glob.glob("*.wav")
     audiofiles.sort()# Number 0 is always the non-degraded file
@@ -71,15 +94,43 @@ def process_graph(graph):
     qualities = {}
     for degraded in tqdm(audiofiles):
         y,sr = quality.load_file(degraded)
-        qualities[degraded] = quality.compare_specto(y_nd, sr_nd, y, sr)
-    os.chdir("..")
-    return qualities
+        basename,_ = os.path.splitext(degraded)
+        qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
+    # Get execution time
+    execFiles = glob.glob("*.csv")
+
+    return qualities, costs
+
+def results_to_csv(graphname, qualities, costs):
+    fieldnames=["Quality", "Cost", "Total"]
+    with open(graphname+".csv", "w", newline='') as csvfile:
+        result={}
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter='\t')
+        writer.writeheader()
+        #Get cost original graph
+        name = list(sorted(costs.keys()))[0]
+        cost, total = costs[name]
+        result["Quality"] = 1.0
+        result["Cost"] = cost
+        result["Total"] = total
+        writer.writerow(result)
+        for graph in qualities.keys():
+            result={}
+            result["Quality"] = qualities[graph]
+            cost, total = costs[graph]
+            result["Cost"] = cost
+            result["Total"] = total
+            writer.writerow(result)
 
 if args.graph:
     for graph in tqdm(args.graph):
         absgraph = os.path.abspath(graph)
-        qualities = process_graph(absgraph)
+        qualities,costs = process_graph(absgraph)
         tqdm.write("Qualities are " + str(qualities))
+        tqdm.write("Costs are " + str(costs))
+        basename,_ = os.path.splitext(os.path.basename(graph))# We stay in the directory created in process_graph
+        results_to_csv(basename + "-exec-report", qualities, costs)
+        os.chdir("..")
 elif args.nodes:
     print("Processing all graphs ", end="")
     if args.all:
