@@ -15,6 +15,8 @@ import quality
 from tqdm import tqdm
 import glob
 import csv
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
@@ -23,6 +25,7 @@ group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("-g", "--graph", help="Specify non-degraded graphs to explore the quality of.", action="append")
 group.add_argument("-n", "--nodes", help="Explore all grqphs of size nodes", type=int)
 parser.add_argument("-a", "--all", help="Explore all sizes up to the one precised by --nodes", action="store_true")
+parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
 
 args = parser.parse_args()
 
@@ -122,6 +125,26 @@ def results_to_csv(graphname, qualities, costs):
             result["Total"] = total
             writer.writerow(result)
 
+def plot(qualities, costs):
+    q = []
+    c_cycle = []
+    c_total = []
+    for k in sorted(qualities.keys()):
+        q.append(qualities[k])
+        cycle, total = costs[k]
+        c_cycle.append(cycle)
+        c_total.append(total)
+    q.append(1.)
+    name = list(sorted(costs.keys()))[0]
+    cost, total = costs[name]
+    c_cycle.append(cost)
+    c_total.append(total)
+    plt.plot(q, c_cycle)
+    #plt.plot(q, c_total)
+    plt.ylabel("cost per cycle (ms)")
+    plt.xlabel("quality")
+    plt.show()
+
 if args.graph:
     for graph in tqdm(args.graph):
         absgraph = os.path.abspath(graph)
@@ -130,6 +153,8 @@ if args.graph:
         tqdm.write("Costs are " + str(costs))
         basename,_ = os.path.splitext(os.path.basename(graph))# We stay in the directory created in process_graph
         results_to_csv(basename + "-exec-report", qualities, costs)
+        # Display in a graph
+        plot(qualities, costs)
         os.chdir("..")
 elif args.nodes:
     print("Processing all graphs ", end="")
