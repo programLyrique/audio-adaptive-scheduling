@@ -87,8 +87,8 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String, cycles: u32, m
         }
     });
 
-    let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
-    let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+    let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize, SAMPLE_RATE);1];
+    let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize, SAMPLE_RATE);1];
 
     let callback = move |pa::OutputStreamCallbackArgs { buffer, frames , time, flags}| {
             debug_assert!(frames == buf_in[0].buffer().len());
@@ -99,7 +99,7 @@ fn real_time_run(mut audio_graph: AudioGraph, graph_name: String, cycles: u32, m
             let start = PreciseTime::now();
             //assert!(time.buffer_dac- time.current < 1.0);
             buf_in[0].buffer_mut().copy_from_slice(buffer);
-            audio_graph.process(&buf_in, &mut buf_out, SAMPLE_RATE);
+            audio_graph.process(&buf_in, &mut buf_out);
             buffer.copy_from_slice(buf_out[0].buffer());
 
             let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
@@ -167,20 +167,21 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
         let mut input_file = sndfile::SndFile::open(audio_input_name)?;
         nb_channels = input_file.nb_channels();
         samplerate = input_file.samplerate() as u32;
+        audio_graph.set_nominal_samplerate(samplerate);
         Box::new(move |buf| {input_file.read_float(buf) as u32})
     } else {
         Box::new(|_buf| { nb_cycles += 1; cycles - nb_cycles })
     };
 
     let buffer_size = nb_frames * nb_channels;
-    let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize);1];
-    let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize);1];
+    let mut buf_in = vec![DspEdge::new(1, 1, buffer_size as usize, samplerate);1];
+    let mut buf_out = vec![DspEdge::new(1, 1, buffer_size as usize, samplerate);1];
 
     let mut output_file = sndfile::SndFile::open_write(graph_name + ".wav", samplerate, nb_channels as u32)?;
 
     while  advance(buf_in[0].buffer_mut()) != 0  {
         let start = PreciseTime::now();
-        audio_graph.process(&buf_in, &mut buf_out, samplerate);
+        audio_graph.process(&buf_in, &mut buf_out);
         output_file.write_float(buf_out[0].buffer());
 
         //Reporting
@@ -238,7 +239,7 @@ fn main() {
     let nb_cycles : u32 = matches.value_of("cycles").map_or(NB_CYCLES, |v| v.parse().unwrap_or(NB_CYCLES));
     let monitor = matches.is_present("monitor");
 
-    let mut audiograph = parse_audiograph_from_file(filename, FRAMES_PER_BUFFER, 1).unwrap();
+    let mut audiograph = parse_audiograph_from_file(filename, FRAMES_PER_BUFFER, 1, SAMPLE_RATE).unwrap();
     audiograph.update_schedule().expect(&format!("Audio graph in {} is cyclic!!", filename));
 
     let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();

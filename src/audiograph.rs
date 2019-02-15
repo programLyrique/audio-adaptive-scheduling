@@ -33,12 +33,13 @@ pub struct DspEdge {
     src_port : u32,
     dst_port : u32,
     buffer : Vec<f32>,
+    pub samplerate: u32,
 }
 
 impl DspEdge {
-    pub fn new(src_port:u32, dst_port:u32, buffer_size:usize) -> DspEdge {
+    pub fn new(src_port:u32, dst_port:u32, buffer_size:usize, samplerate:u32) -> DspEdge {
         assert!(src_port >=1 && dst_port >= 1);
-        DspEdge {src_port, dst_port, buffer: vec![0.;buffer_size]}
+        DspEdge {src_port, dst_port, buffer: vec![0.;buffer_size], samplerate}
     }
 
     pub fn src_port(&self) -> u32 {self.src_port}
@@ -67,7 +68,7 @@ impl fmt::Display for  DspEdge {
 
 pub struct DspNode {
     node_infos : audiograph_parser::Node,
-    node_processor : Box<dyn AudioEffect>
+    node_processor : Box<dyn AudioEffect>,
 }
 
 impl DspNode {
@@ -112,7 +113,7 @@ impl fmt::Display for  DspNode {
 
 
 pub trait AudioEffect : fmt::Display {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge], samplerate : u32);
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]);
 
     fn nb_inputs(&self) -> usize;
     fn nb_outputs(&self) -> usize;
@@ -127,8 +128,8 @@ pub trait AudioEffect : fmt::Display {
 impl AudioEffect for Box<AudioEffect>
 {
     #[inline]
-    fn process(& mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32){
-        (**self).process(inputs, outputs, samplerate);
+    fn process(& mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]){
+        (**self).process(inputs, outputs);
     }
 
     #[inline]
@@ -154,10 +155,11 @@ pub struct AudioGraph {
     has_source: bool,//Whether there is a source from the audio soundcard or only synth
     output_node_index: NodeIndex,
     output_edges: Vec<DspEdge>,
+    nominal_samplerate: u32,
 }
 
 impl AudioGraph {
-    pub fn new(frames_per_buffer : u32, channels : u32) -> AudioGraph {
+    pub fn new(frames_per_buffer : u32, channels : u32, samplerate: u32) -> AudioGraph {
         let input_node_infos = audiograph_parser::Node {class_name: "source".to_string(), nb_outlets:1, .. Default::default()};
         let output_node_infos = audiograph_parser::Node {class_name: "sink".to_string(), nb_inlets:1, .. Default::default()};
         let mut graph = Graph::new();
@@ -172,10 +174,21 @@ impl AudioGraph {
             frames_per_buffer,
             channels,
             input_node_index,
-            input_edges: vec![DspEdge::new(1, 1, size);channels as usize],
+            input_edges: vec![DspEdge::new(1, 1, size, samplerate);channels as usize],
             has_source: false,
             output_node_index,
-            output_edges : vec![DspEdge::new(1, 1, size);channels as usize],
+            output_edges : vec![DspEdge::new(1, 1, size, samplerate);channels as usize],
+            nominal_samplerate: samplerate,
+        }
+    }
+
+    pub fn set_nominal_samplerate(&mut self, samplerate: u32) {
+        self.nominal_samplerate = samplerate;
+        for input_edge in self.input_edges.iter_mut() {
+            input_edge.samplerate = samplerate;
+        }
+        for output_edge in self.output_edges.iter_mut() {
+            output_edge.samplerate = samplerate;
         }
     }
 
@@ -216,10 +229,10 @@ impl AudioGraph {
 
         if max_nb > self.input_edges.len() {
             //println!("Input: old={} new={}", self.input_edges.len(), max_nb);
-            self.input_edges.resize(max_nb, DspEdge::new(1, 1, self.size));}
+            self.input_edges.resize(max_nb, DspEdge::new(1, 1, self.size, self.nominal_samplerate));}
         if max_nb > self.output_edges.len() {
             //println!("Output: old={} new={}", self.output_edges.len(), max_nb);
-            self.output_edges.resize(max_nb, DspEdge::new(1, 1, self.size));}
+            self.output_edges.resize(max_nb, DspEdge::new(1, 1, self.size, self.nominal_samplerate));}
         self.graph.add_node(node)
     }
 
@@ -231,7 +244,7 @@ impl AudioGraph {
             assert!(dst_port <= dst_node.node_processor.nb_inputs() as u32 && dst_port >= 1);
         }
         let parent = self.graph.add_node(src);
-        self.graph.add_edge(parent, dst, DspEdge::new(src_port, dst_port, self.size));
+        self.graph.add_edge(parent, dst, DspEdge::new(src_port, dst_port, self.size, self.nominal_samplerate));
         parent
     }
 
@@ -242,7 +255,7 @@ impl AudioGraph {
             assert!(dst_port <= dst.node_processor.nb_inputs() as u32 && dst_port >= 1);
         }
         let child = self.graph.add_node(dst);
-        self.graph.add_edge(src, child, DspEdge::new(src_port, dst_port, self.size));
+        self.graph.add_edge(src, child, DspEdge::new(src_port, dst_port, self.size, self.nominal_samplerate));
         child
     }
 
@@ -257,7 +270,7 @@ impl AudioGraph {
     }
 
     pub fn add_connection(&mut self, src: NodeIndex, src_port: u32, dst : NodeIndex, dst_port: u32) -> EdgeIndex {
-        self.graph.add_edge(src, dst, DspEdge::new(src_port, dst_port, self.size))
+        self.graph.add_edge(src, dst, DspEdge::new(src_port, dst_port, self.size, self.nominal_samplerate))
     }
 
     pub fn outputs(& self, src : NodeIndex) -> Edges<DspEdge, Directed> {
@@ -310,7 +323,7 @@ impl AudioGraph {
         }
     }
 
-    /// Adjust buffer sizes for nodes between two resamplers
+    /// Adjust buffer sizes and samplerates for nodes between two resamplers
     fn buffer_size_resamplers(&mut self) {
         let sources = self.graph.externals(Direction::Incoming).collect::<Vec<_>>();
         let mut dfs = Dfs::empty(&self.graph);
@@ -323,23 +336,27 @@ impl AudioGraph {
                 let ratio : f64 = self.graph[node].node_infos.more.get("ratio").map_or(1.0, |v| v.parse().unwrap());
                 //Get min incoming buffer size
                 let buf_size = self.inputs(node).map(|edge| edge.weight().buffer().len()).min().unwrap_or(self.default_buffer_size());
+                //Get min incoming samplerate
+                let samplerate = self.inputs(node).map(|edge| edge.weight().samplerate).min().unwrap_or(self.nominal_samplerate);
 
-                let new_buf_size = if class_name == "resampler" {
+                let (new_buf_size, new_samplerate) = if class_name == "resampler" {
                     /*
                         Some incoming edges may have not their buffer size downsampled yet (but at least one has it thanks to the dfs ordering)
                         Some incoming edges could have not had their buffer size with the normal sample size yet if an incoming branch was downsampled (but at least one has it thanks to the dfs ordering).
                         But actually this case does not happen, as if the path is downsampled, then thanks to dfs ordering, all the subsequent edges including the incoming one of the current node, must have been explored.
                         If it had happened, we would have taken max in the case of ratio < 1.0
                     */
-                    (buf_size as f64 * ratio) as usize
+                    ((buf_size as f64 * ratio) as usize, (samplerate as f64 * ratio) as u32)
                 }
                 else {//We are not after a resampler so we propagate the min buffer size of the previous edges.
-                    buf_size
+                    (buf_size, samplerate)
                 };
+                println!("Buffer size={}; samplerate={}", new_buf_size, new_samplerate);
                 //Modify all outcoming buffer sizes
                 let mut output_edges = self.outputs_mut(node);
                 while let Some(edge) = output_edges.next_edge(&self.graph) {
                     self.graph.edge_weight_mut(edge).unwrap().resize(new_buf_size);
+                    self.graph.edge_weight_mut(edge).unwrap().samplerate = new_samplerate;
                 }
             }
         }
@@ -464,7 +481,7 @@ impl fmt::Display for AudioGraph {
 }
 
 impl AudioEffect for AudioGraph {
-    fn process(& mut self, inputs: &[DspEdge], outputs: &mut [DspEdge], samplerate : u32) {
+    fn process(& mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]) {
         let interlaced_size = (self.channels * self.frames_per_buffer) as usize;
         let input_buffer = &inputs[0].buffer();
         assert_eq!(input_buffer.len(), interlaced_size);
@@ -478,7 +495,7 @@ impl AudioEffect for AudioGraph {
             self.input_edges[0].resize(interlaced_size);
             self.input_edges[0].buffer_mut().copy_from_slice(input_buffer);
             //Process
-            self.graph.node_weight_mut(self.input_node_index).unwrap().node_processor.process(&self.input_edges[0..1], &mut self.output_edges[0..self.channels as usize], samplerate);
+            self.graph.node_weight_mut(self.input_node_index).unwrap().node_processor.process(&self.input_edges[0..1], &mut self.output_edges[0..self.channels as usize]);
             //Prepare outputs
             //Prepare Outputs
             //We could decrease memory usage by using a buffer pool
@@ -500,17 +517,19 @@ impl AudioEffect for AudioGraph {
                 (n.nb_inputs(), n.nb_outputs())
             };
 
-            //Fix input_edges and output_edges buffer sizes.
+            //Fix input_edges and output_edges buffer sizes and samplerates.
             let mut inputs = self.inputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = inputs.next_edge(&self.graph) {
                 self.input_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+                self.input_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
                 i += 1;
             }
             let mut outputs = self.outputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = outputs.next_edge(&self.graph) {
                 self.output_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+                self.output_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
                 i += 1;
             }
 
@@ -525,7 +544,7 @@ impl AudioEffect for AudioGraph {
             }
 
             //Process
-            self.graph.node_weight_mut(*node).unwrap().node_processor.process(&self.input_edges[0..nb_inputs], &mut self.output_edges[0..nb_outputs], samplerate);
+            self.graph.node_weight_mut(*node).unwrap().node_processor.process(&self.input_edges[0..nb_inputs], &mut self.output_edges[0..nb_outputs]);
 
             //Prepare Outputs
             //That's also quite inefficient!!
@@ -553,7 +572,7 @@ impl AudioEffect for AudioGraph {
         //Output edge needs to be the interlaced_size
         self.output_edges[0].resize(interlaced_size);
         //Process
-        self.graph.node_weight_mut(self.output_node_index).unwrap().node_processor.process(&self.input_edges[0..self.channels as usize], &mut self.output_edges[0..1], samplerate);
+        self.graph.node_weight_mut(self.output_node_index).unwrap().node_processor.process(&self.input_edges[0..self.channels as usize], &mut self.output_edges[0..1]);
         //Prepare Output to soundcard
         output_buffer.copy_from_slice(self.output_edges[0].buffer());
         self.output_edges[0].resize(self.size);
@@ -598,9 +617,11 @@ impl fmt::Display for  Oscillator {
 }
 
 impl AudioEffect for Oscillator {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
+
+        let samplerate = outputs[0].samplerate;
 
         for sample in outputs[0].buffer_mut().iter_mut() {
             *sample = sine_wave(self.phase, self.volume);
@@ -638,10 +659,13 @@ impl fmt::Display for  Modulator {
 }
 
 impl AudioEffect for Modulator {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
         debug_assert_eq!(outputs[0].buffer().len(), inputs[0].buffer().len());
+
+        debug_assert!(inputs[0].samplerate == outputs[0].samplerate);
+        let samplerate = inputs[0].samplerate;
 
         for (sample_out, sample_in) in outputs[0].buffer_mut().iter_mut().zip(inputs[0].buffer().iter()) {
             *sample_out = *sample_in * sine_wave(self.phase, self.volume);
@@ -688,7 +712,7 @@ fn mixer(buffer: &mut [f32], input_buffer: & [f32]) {
 }
 
 impl AudioEffect for InputsOutputsAdaptor {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
         debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
@@ -727,7 +751,7 @@ impl fmt::Display for  Sink {
 
 
 impl AudioEffect for Sink {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
 
@@ -759,7 +783,7 @@ impl fmt::Display for  Source {
 
 
 impl AudioEffect for Source {
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], _samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert!(inputs.len() == self.nb_inputs());
         debug_assert!(outputs.len() == self.nb_outputs());
 
@@ -817,14 +841,15 @@ impl fmt::Display for  Resampler {
 
 impl AudioEffect for Resampler {
     //TODO: We should propagate the samplerate argument for the following nodes in the schedule.
-    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge], samplerate : u32) {
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
+        debug_assert_eq!((inputs[0].samplerate as f64 * self.resampler.src_ratio) as u32, outputs[0].samplerate);
 
         // Already done in the process method so outputs should already be the right size
         let new_buf_size = (self.resampler.src_ratio * inputs[0].buffer().len() as f64) as usize;
         assert_eq!(outputs[0].buffer().len(), new_buf_size);
-        outputs[0].resize(new_buf_size);
+        outputs[0].resize(new_buf_size);//No-op as it is already the right size
 
 
         self.resampler.resample(inputs[0].buffer(), outputs[0].buffer_mut()).unwrap();

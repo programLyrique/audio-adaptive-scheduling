@@ -53,7 +53,7 @@ pub struct Edge {
 #[grammar = "audiograph.pest"]
 pub struct AudiographParser;
 
-pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usize) -> Result<AudioGraph, ParseError<Rule>> {
+pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usize, samplerate: u32) -> Result<AudioGraph, ParseError<Rule>> {
     let audiograph = AudiographParser::parse(Rule::file, audiograph)?.next().unwrap();
 
     use pest::iterators::*;
@@ -112,7 +112,7 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
     let edges = edges.into_iter().flat_map(parse_edge).collect::<Vec<_>>();
     let mut node_indexes : HashMap<String, NodeIndex> = HashMap::new();
 
-    let mut audiograph = AudioGraph::new(buffer_size as u32, nb_channels as u32);
+    let mut audiograph = AudioGraph::new(buffer_size as u32, nb_channels as u32, samplerate);
 
     for node_infos in nodes.into_iter() {
         let id = node_infos.id.clone();
@@ -132,12 +132,12 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
     Ok(audiograph)
 }
 
-pub fn parse_audiograph_from_file(filename : &str, buffer_size: usize, nb_channels: usize) -> Result<AudioGraph, ParseError<Rule>>  {
+pub fn parse_audiograph_from_file(filename : &str, buffer_size: usize, nb_channels: usize, samplerate: u32) -> Result<AudioGraph, ParseError<Rule>>  {
     let path = Path::new(filename);
     let mut file = File::open(&path).expect("Impossible to open file.");
     let mut s = String::new();
     file.read_to_string(&mut s).expect("Impossible to read file.");
-    parse_audiograph(&s, buffer_size, nb_channels)
+    parse_audiograph(&s, buffer_size, nb_channels, samplerate)
 }
 
 #[cfg(test)]
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn build_audiograph_test() {
-        let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2).expect("Impossible to open file.");
+        let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2, 44_100).expect("Impossible to open file.");
         println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
         assert!(audiograph.nb_nodes() == 5);
         assert!(audiograph.nb_edges() == 6);
