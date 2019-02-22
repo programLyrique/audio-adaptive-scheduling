@@ -9,22 +9,28 @@ import librosa
 import numpy as np
 import math
 
-def perceptive_ITU(freqs):
+def ITU_weighting(freqs):
     """ ITU_R_468 vectorized
-    https://en.wikipedia.org/wiki/ITU-R_468_noise_weighting """
+    https://en.wikipedia.org/wiki/ITU-R_468_noise_weighting
+    Supposedly better than A-weighting """
     h1 = -4.737338981378384e-24 *  freqs**6 + 2.043828333606125e-15 * freqs**4 - 1.363894795463638e-7 * freqs**2 + 1
     h2 = 1.306612257412824e-19 * freqs**5 - 2.118150887518656e-11 * freqs**3 + 5.559488023498642e-4 * freqs
 
     R_ITU = 1.246332637532143e-4 * freqs / np.sqrt(h1**2 + h2**2)
     return 18.2 + 20 * np.log10(R_ITU)
 
+def perceptive_weighting_ITU(y, sr):
+    pass
+
+# Courbe isophonique ?
+# https://www.iso.org/fr/standard/34222.html
+
 # See here: http://librosa.github.io/librosa/generated/librosa.core.perceptual_weighting.html
+#https://www.iso.org/fr/standard/34222.html
 def perceptual_cqt(y,sr):
     C = np.abs(librosa.cqt(y, sr=sr, fmin=librosa.note_to_hz('A1')))
     freqs = librosa.cqt_frequencies(C.shape[0], fmin=librosa.note_to_hz('A1'))#Adapted to music
     perceptual_CQT = librosa.perceptual_weighting(C**2, freqs, ref=np.max)# Uses
-    # https://en.wikipedia.org/wiki/ITU-R_468_noise_weighting This one seems to be better for high freq
-    # because A-weighting does not cut enough high frequencies
     return perceptual_CQT
 
 def compare_specto(y1, sr1, y2, sr2):
