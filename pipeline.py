@@ -5,6 +5,9 @@ Execute all the stuff:
 - generating graphs (enumeration for a given size for instance or for a given non-degraded graph)
 - executing graph
 - comparing graphs
+
+Dependencies:
+pip3 install tqdm numpy matlpotlib adjusttext 
 """
 
 import argparse
@@ -15,8 +18,10 @@ import quality
 from tqdm import tqdm
 import glob
 import csv
+
 import matplotlib.pyplot as plt
 import numpy as np
+from adjustText import adjust_text
 
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
@@ -129,20 +134,24 @@ def plot(qualities, costs):
     q = []
     c_cycle = []
     c_total = []
+    texts= []
     for k in sorted(qualities.keys()):
         q.append(qualities[k])
         cycle, total = costs[k]
         c_cycle.append(cycle)
         c_total.append(total)
+        texts.append(plt.text(qualities[k], cycle, k, ha='center', va='center'))
     q.append(1.)
     name = list(sorted(costs.keys()))[0]
     cost, total = costs[name]
     c_cycle.append(cost)
     c_total.append(total)
-    plt.plot(q, c_cycle)
+    texts.append(plt.text(1.0, cost, name, ha='center', va='center'))
+    plt.plot(q, c_cycle, 'ro')
     #plt.plot(q, c_total)
     plt.ylabel("cost per cycle (ms)")
     plt.xlabel("quality")
+    adjust_text(texts)
     plt.show()
 
 if args.graph:
