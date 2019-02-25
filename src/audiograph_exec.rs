@@ -30,7 +30,7 @@ use audio_adaptive::sndfile;
 const CHANNELS: i32 = 1;
 const SAMPLE_RATE: u32 = 44_100;
 const NB_CYCLES : u32 = 12000;
-const FRAMES_PER_BUFFER : usize = 64;
+const FRAMES_PER_BUFFER : usize = 256;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TimeMonitor {

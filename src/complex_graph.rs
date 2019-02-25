@@ -16,7 +16,8 @@ use std::thread;
 use std::time as rust_time;//To be used for thread::sleep for instance
 use std::process::exit;
 
-use rand::Rng;
+use rand::prelude::*;
+use rand::seq::SliceRandom;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -62,11 +63,11 @@ fn run(mode : Mode, nb_oscillators : u32, proba_edge : f64) -> Result<(), pa::Er
 
     let mut audio_graph = rand_gen.generate(& |c, rng|
         {
-            let generators = vec![DspNode::Modulator(5., 500 + rng.gen_range::<u32>(0, 400), 1.0),
-                DspNode::LowPass([5.,6.,7.,8.],200. + rng.gen_range::<f32>(0., 400.),0.8)];
+            let generators = vec![DspNode::Modulator(5., 500 + rng.gen_range(0, 400), 1.0),
+                DspNode::LowPass([5.,6.,7.,8.],200. + rng.gen_range(0., 400.),0.8)];
             match c  {
-                NodeClass::Input => DspNode::Oscillator(6., 500 + rng.gen_range::<u32>(0, 400), 1.0),
-                NodeClass::Transformer | NodeClass::Output => *rng.choose(&generators).unwrap()
+                NodeClass::Input => DspNode::Oscillator(6., 500 + rng.gen_range(0, 400), 1.0),
+                NodeClass::Transformer | NodeClass::Output => *generators.choose(rng).unwrap()
             }
         });
     //TODO: don't generate cyclic graphs!!

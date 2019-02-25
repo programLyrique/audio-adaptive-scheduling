@@ -17,6 +17,7 @@ use std::fmt;
 use audiograph_parser;
 use samplerate;
 
+
 #[derive(Debug)]
 pub enum AudioGraphError {
     Cycle,
@@ -592,7 +593,7 @@ fn sine_wave(phase : f32, volume : f32) -> f32 {
 }
 
 #[derive(Debug)]
-struct Oscillator {
+pub struct Oscillator {
     phase: f32,
     frequency: u32,
     volume: f32
@@ -634,7 +635,7 @@ impl AudioEffect for Oscillator {
 }
 
 #[derive(Debug)]
-struct Modulator {
+pub struct Modulator {
     phase: f32,
     frequency: u32,
     volume: f32

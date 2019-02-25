@@ -26,7 +26,7 @@ name = "audio_adaptive"
 libc = "0.2.11"
 rustbox = "*"
 portaudio = "*"
-rand = "0.5"
+rand = "*"
 time = "*"
 lazy_static = "*"
 #ncollide = "0.9.0"
@@ -37,3 +37,10 @@ pest_derive = "2.0"
 itertools = "*"
 crossbeam-channel = "*"
 clap = "*"
+
+[dev-dependencies]
+criterion = "0.2.9"
+
+[[bench]]
+name = "effect_benchmark"
+harness = false

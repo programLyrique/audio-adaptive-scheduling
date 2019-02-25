@@ -19,7 +19,7 @@ struct src_data {
     src_ratio: c_double,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub enum ConverterType {
     SincBestQuality,
