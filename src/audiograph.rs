@@ -351,7 +351,7 @@ impl AudioGraph {
                 else {//We are not after a resampler so we propagate the min buffer size of the previous edges.
                     (buf_size, samplerate)
                 };
-                println!("Buffer size={}; samplerate={}", new_buf_size, new_samplerate);
+                //println!("Buffer size={}; samplerate={}", new_buf_size, new_samplerate);
                 //Modify all outcoming buffer sizes
                 let mut output_edges = self.outputs_mut(node);
                 while let Some(edge) = output_edges.next_edge(&self.graph) {
