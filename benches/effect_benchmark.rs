@@ -5,13 +5,22 @@ use criterion::*;
 
 extern crate audio_adaptive;
 
+extern crate rand;
+
+use rand::prelude::*;
+use rand::distributions::Uniform;
+
 use audio_adaptive::audiograph::*;
 use audio_adaptive::samplerate;
 
 fn osc_bench(c : &mut Criterion) {
-    c.bench_function("osc",  |b| {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1.,1.);
+    c.bench_function("osc",  move |b| {
         let mut osc = Oscillator::new(0., 440, 1.);
-        let input = vec![DspEdge::new(1, 1, 256, 44100);1];
+        let mut input = vec![DspEdge::new(1, 1, 256, 44100);1];
+        let size = input[0].buffer().len();
+        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(size).collect::<Vec<f32>>());
         b.iter( ||
             {
                 let mut output = vec![DspEdge::new(1, 1, 256, 44100);1];
@@ -20,9 +29,13 @@ fn osc_bench(c : &mut Criterion) {
 }
 
 fn mod_bench(c : &mut Criterion) {
-    c.bench_function("mod",  |b| {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1.,1.);
+    c.bench_function("mod",  move |b| {
         let mut modu = Modulator::new(0., 440, 1.);
-        let input = vec![DspEdge::new(1, 1, 256, 44100);1];
+        let mut input = vec![DspEdge::new(1, 1, 256, 44100);1];
+        let size = input[0].buffer().len();
+        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(size).collect::<Vec<f32>>());
         b.iter( ||
             {
                 let mut output = vec![DspEdge::new(1, 1, 256, 44100);1];
@@ -34,13 +47,17 @@ fn resampler_bench(c : &mut Criterion) {
     let parameters = vec![samplerate::ConverterType::SincBestQuality, samplerate::ConverterType::SincMediumQuality,
     samplerate::ConverterType::SincFastest, samplerate::ConverterType::ZeroOrderHold,
     samplerate::ConverterType::Linear];
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1.,1.);
     c.bench(
         "resampler",
         ParameterizedBenchmark::new(
-            "my_function",
+            "resampler",
             move |b, conv_type| {
                 let mut conv = Resampler::new(conv_type.clone(), 0.5);
-                let input = vec![DspEdge::new(1, 1, 256, 44100);1];
+                let mut input = vec![DspEdge::new(1, 1, 256, 44100);1];
+                let size = input[0].buffer().len();
+                input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(size).collect::<Vec<f32>>());
                 b.iter(|| {
                     let mut output = vec![DspEdge::new(1, 1, 128, 44100);1];
                     conv.process(&input, &mut output)
