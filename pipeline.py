@@ -23,7 +23,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from adjustText import adjust_text
 from operator import itemgetter
-from matplotlib.ticker import MultipleLocator
+
+from scipy import stats
 
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
@@ -33,6 +34,7 @@ group.add_argument("-g", "--graph", help="Specify non-degraded graphs to explore
 group.add_argument("-n", "--nodes", help="Explore all grqphs of size nodes", type=int)
 parser.add_argument("-a", "--all", help="Explore all sizes up to the one precised by --nodes", action="store_true")
 parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
+parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
 
 args = parser.parse_args()
 
@@ -40,18 +42,22 @@ args = parser.parse_args()
 # and the one to generate degraded versions
 graph_exec = "./target/release/audiograph"
 graph_enum = "../ims-analysis/main.native"
+nodes_dic = "../ims-analysis/nodes.ag"
 try:
     with open("pipeline.json", "r") as f:
         json = json.load(f)
         graph_exec = json.get("audiograph", graph_exec)
+        nodes_dic = json.get("nodes", nodes_dic)
         graph_enum = json.get("enumerate", graph_enum)
 except:
     print("No specific paths provided.")
 finally:
     graph_exec = os.path.abspath(graph_exec)
     graph_enum = os.path.abspath(graph_enum)
+    nodes_dic = os.path.abspath(nodes_dic)
     print("Graph execution with: ", graph_exec)
     print("Graph enumeration with: ", graph_enum)
+    print("Using node dictionary: ", nodes_dic)
 
 def get_costs(csvname):
     """Get csv file with execution times and compute average execution time
@@ -78,7 +84,7 @@ def process_graph(graph):
     os.chdir(dirname)
     tqdm.write("Enumerating degraded versions")
     # Export both as .ag and as .dot
-    subprocess.run([graph_enum, "-w", "-x", "-edr", graph], check=True)
+    subprocess.run([graph_enum, "-w", "-x", "-edr", graph, "--node-file="+nodes_dic], check=True)
     costs={}
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
@@ -98,10 +104,10 @@ def process_graph(graph):
     non_degraded = audiofiles.pop(0)
     tqdm.write("Non degraded file is: " + non_degraded)
     tqdm.write("Comparing degraded versions with non-degraded one.")
-    y_nd,sr_nd = quality.load_file(non_degraded)
+    y_nd,sr_nd = quality.load_file(non_degraded, duration=2)
     qualities = {}
     for degraded in tqdm(audiofiles):
-        y,sr = quality.load_file(degraded)
+        y,sr = quality.load_file(degraded, duration=2)
         basename,_ = os.path.splitext(degraded)
         qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
     # Get execution time
@@ -130,56 +136,71 @@ def results_to_csv(graphname, qualities, costs):
             result["Total"] = total
             writer.writerow(result)
 
-def load_theo(filename):
+def load_csv(filename):
     """Load quality and cost from the theoretical model"""
     with open(filename, "r", newline='') as csvfile:
         csvreader = csv.DictReader(csvfile, delimiter='\t')
         qualities=[]
         costs=[]
         for row in csvreader:
-            qualities.append(row["Quality"])
-            costs.append(row["Cost"])
+            qualities.append(float(row["Quality"]))
+            costs.append(float(row["Cost"]))
         return qualities, costs
 
 def sort_by_quality(qualities, costs):
     return [[*x] for x in zip(*sorted(zip(qualities, costs), key=itemgetter(0)))]
 
-def plot(qualities, costs, qualities_th, costs_th):
+
+def q_c_dict_to_list(qualities, costs):
+    "Converts the dict of qualities and costs to lists"
     q = []
     c_cycle = []
-    c_total = []
-    texts= []
-
-    fig, axes = plt.subplots(2,1)
-
-    ax1= axes[0]
-    ax2 = axes[1]
-
-    for k in sorted(qualities.keys()):
-        q.append(qualities[k])
-        cycle, total = costs[k]
-        c_cycle.append(cycle)
-        c_total.append(total)
-        name = k.split("-")[-1]
-        texts.append(ax1.text(qualities[k], cycle, name, ha='center', va='center'))
+    # graph 0
+    c_cycle.append
     q.append(1.)
     name = list(sorted(costs.keys()))[0]
     cost, total = costs[name]
     c_cycle.append(cost)
-    c_total.append(total)
-    texts.append(ax1.text(1.0, cost, "0", ha='center', va='center'))
+    # Then, from graph 1
+    for k in sorted(qualities.keys()):
+        q.append(qualities[k])
+        cycle, _ = costs[k]
+        c_cycle.append(cycle)
+        #name = k.split("-")[-1]
 
-    q,c_cycle = sort_by_quality(q, c_cycle)
+    return q, c_cycle
+
+def plot(qualities_mes, costs_mes, qualities_th, costs_th):
+    fig, axes = plt.subplots(2,1)
+
+    ax1= axes[0]
+
+    texts_mes= []
+    for (i, (quality, cost)) in enumerate(zip(qualities_mes, costs_mes)):
+        texts_mes.append(ax1.text(quality, cost, str(i), ha='center', va='center'))
+
+    qualities_mes,costs_mes = sort_by_quality(qualities_mes, costs_mes)
 
     #print("Measured: ", q, c_cycle)
 
     color='tab:red'
 
-    ax1.set_ylabel("cost per cycle (ms)")
+    ax1.set_ylabel("cost per cycle (µs)")
     ax1.set_xlabel("quality")
-    ax1.scatter(q, c_cycle,  label="Measured", color=color)
-    #ax1.tick_params(axis='y', labelcolor=color)
+    ax1.scatter(qualities_mes, costs_mes,  label="Measured", color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True)
 
+    # We will rather use a distance? Such as Kendall Tau... But not a correlation.
+    #rho_s,p_s = stats.spearmanr(q, c_cycle)
+    #tau_k, p_k = stats.kendalltau(q, c_cycle)
+    #tau_w, p_w = stats.weightedtau(q, c_cycle)
+
+    #print("Spearman: rho=", rho_s, ", p=", p_s)
+    #print("KendallTau: rho=", tau_k, ", p=", p_k)
+    #print("Weighted Kendall: rho=", tau_w, ", p=", p_w)
+
+    ax2 = axes[1]
 
     texts_th = []
     for (i, (quality, cost)) in enumerate(zip(qualities_th, costs_th)):
@@ -192,10 +213,11 @@ def plot(qualities, costs, qualities_th, costs_th):
     qualities_th,costs_th = sort_by_quality(qualities_th, costs_th)
 
     ax2.scatter(qualities_th, costs_th,  label="Model", color=color)
-    #ax2.tick_params(axis='y', color=color)
+    ax2.tick_params(axis='y', labelcolor=color)
+    ax2.grid(True)
 
 
-    adjust_text(texts, ax=ax1)
+    adjust_text(texts_mes, ax=ax1)
     adjust_text(texts_th, ax=ax2)
 
 
@@ -206,15 +228,24 @@ def plot(qualities, costs, qualities_th, costs_th):
 
 if args.graph:
     for graph in tqdm(args.graph):
-        absgraph = os.path.abspath(graph)
-        qualities,costs = process_graph(absgraph)
-        tqdm.write("Qualities are " + str(qualities))
-        tqdm.write("Costs are " + str(costs))
+        q_mes=[]
+        c_mes=[]
         basename,_ = os.path.splitext(os.path.basename(graph))# We stay in the directory created in process_graph
-        results_to_csv(basename + "-exec-report", qualities, costs)
-        q_th, c_th = load_theo(basename + "-theo.csv")
-        # Display in a graph
-        plot(qualities, costs, q_th, c_th)
+        if not args.only_draw:
+            absgraph = os.path.abspath(graph)
+            qualities,costs = process_graph(absgraph)
+            tqdm.write("Qualities are " + str(qualities))
+            tqdm.write("Costs are " + str(costs))
+            results_to_csv(basename + "-exec-report", qualities, costs)
+            q_mes, c_mes = q_c_dict_to_list(qualities, costs)
+        if args.draw or args.only_draw:
+            if args.only_draw:
+                dirname = basename + "-degraded"
+                os.chdir(dirname)
+                q_mes, c_mes = load_csv(basename + "-exec-report.csv")
+            q_th, c_th = load_csv(basename + "-theo.csv")
+            # Display in a graph
+            plot(q_mes, c_mes, q_th, c_th)
         os.chdir("..")
 elif args.nodes:
     print("Processing all graphs ", end="")

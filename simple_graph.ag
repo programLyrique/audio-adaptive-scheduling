@@ -1,17 +1,18 @@
 n1 =
 {
-	kind : "p",
+	kind : "osc",
+	freq : "440",
 	in: 0,
 	out : 1,
 };
 
-n2 = { kind : "plop", in : 0, out:1,};
+n2 = { kind : "osc", freq:"679", in : 0, out:1,};
 
-n3 = {kind: "mixer", in : 2, out:1,};
+n3 = {kind: "mix", in : 2, out:1,};
 
-n4 = {kind: "reverb", in:1, out:1,};
+n4 = {kind: "mod", freq:"5", in:1, out:1,};
 
-n5 = {kind: "proc", in:1, out:1,};
+n5 = {kind: "mod", freq:"1000", in:1, out:1,};
 
 n1.1 -> n3.1;
 n2.1 -> n3.2;
