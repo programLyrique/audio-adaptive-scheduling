@@ -46,6 +46,7 @@ graph_enum = "../ims-analysis/main.native"
 nodes_dic = "../ims-analysis/nodes.ag"
 try:
     with open("pipeline.json", "r") as f:
+        print("Loading pipeline.json")
         json = json.load(f)
         graph_exec = json.get("audiograph", graph_exec)
         nodes_dic = json.get("nodes", nodes_dic)
@@ -74,6 +75,7 @@ def get_costs(csvname):
         return total / float(nb_rows), total
 
 def execute_graph(graph):
+    tqdm.write("Executing graph " + graph)
     subprocess.run([graph_exec, "-m", "-b", "-c", "60000", graph], check=True)
     # Get execution times for reports (-m option)
     basename,_ = os.path.splitext(os.path.basename(graph))
@@ -113,7 +115,8 @@ def process_graph(graph):
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
         tqdm.write(graph)
-        execute_graph(graph, costs)
+        basename,_ = os.path.splitext(os.path.basename(graph))
+        costs[basename] = execute_graph(graph)
     # Get resulting audiofiles
     audiofiles = glob.glob("*.wav")
     qualities = compare_audio_files(audiofiles)
@@ -131,7 +134,6 @@ def process_all_graphs(nb_nodes, dirname):
     #./main.native -dewx -n 5 --node-file ../nodes.ag
     subprocess.run([graph_enum, "-dewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic], check=True)
 
-    # Getting the costs
     results={}
     tqdm.write("Executing graphs")
     #Group them by non-degraded graphs
@@ -139,26 +141,49 @@ def process_all_graphs(nb_nodes, dirname):
         # Get the prefix for this graph
         prefix = non_degraded_graph.rsplit("-", maxsplit=1)[0]
         tqdm.write(prefix)
-        results[prefix] = []
-        for graph in tqdm(glob.iglob(prefix+"*.ag")):
+        result_graph=[]
+        for graph in tqdm(sorted(glob.iglob(prefix+"*.ag"))):
             basename,_ = os.path.splitext(graph)
             result= GraphResults(basename)
             costs = execute_graph(graph)
             result.costs = costs
-            results[prefix].append(result)
-        # Get audio files
-        audiofiles = glob.glob(prefix+"*.wav")
-        qualities = compare_audio_files(audiofiles)
+            result_graph.append(result)
 
-        # Update results
-        for result in results[prefix]:
-            #If we've not computed a quality for it, it is the non-degraded graph
-            result.quality = qualities.get(result.name, 1.0)
+        # Meaningless to compute rank correlation on a vector of size 1
+        if len(result_graph) > 1:
+            # Get audio files
+            audiofiles = glob.glob(prefix+"*.wav")
+            qualities = compare_audio_files(audiofiles)
 
-    #TODO: compute correlation between costs for theoretical and experimental models
-    # Idem for qualities
-    # And then correlation between costs and qualities
-    # rather put that in the results
+            # Update results
+            for result in result_graph:
+                #If we've not computed a quality for it, it is the non-degraded graph
+                result.quality = qualities.get(result.name, 1.0)
+
+            costs_mes=[]
+            qualities_mes=[]
+            for result in result_graph:
+                cost,_ = result.costs
+                costs_mes.append(cost)
+                qualities_mes.append(result.quality)
+
+            # We should get them in the same graph order as in the measured one (non-degraded first)
+            csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
+            costs_th, qualities_th = load_csv(csvname)
+
+            kendalltau = GraphResults(prefix)
+            kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
+            kendalltau.quality = stats.kendalltau(qualities_mes, qualities_th, nan_policy='raise')
+
+            spearmanr = GraphResults(prefix)
+            spearmanr.costs = stats.spearmanr(costs_mes, costs_th, nan_policy='raise')
+            spearmanr.quality = stats.spearmanr(qualities_mes, qualities_th, nan_policy='raise')
+
+            print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
+            print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
+
+            results[prefix] = (kendalltau, spearmanr)
+
     return results
 
 
@@ -217,6 +242,11 @@ def q_c_dict_to_list(qualities, costs):
 
     return q, c_cycle
 
+def nan_in(l, name):
+    for (i,e) in enumerate(l):
+        if np.isnan(e):
+            print("NaN detected in", name, " at iteration ", i)
+
 def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     fig, axes = plt.subplots(2,1)
 
@@ -238,15 +268,6 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     ax1.tick_params(axis='y', labelcolor=color)
     ax1.grid(True)
 
-    # We will rather use a distance? Such as Kendall Tau... But not a correlation.
-    #rho_s,p_s = stats.spearmanr(q, c_cycle)
-    #tau_k, p_k = stats.kendalltau(q, c_cycle)
-    #tau_w, p_w = stats.weightedtau(q, c_cycle)
-
-    #print("Spearman: rho=", rho_s, ", p=", p_s)
-    #print("KendallTau: rho=", tau_k, ", p=", p_k)
-    #print("Weighted Kendall: rho=", tau_w, ", p=", p_w)
-
     ax2 = axes[1]
 
     texts_th = []
@@ -266,6 +287,17 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
 
     adjust_text(texts_mes, ax=ax1)
     adjust_text(texts_th, ax=ax2)
+
+    kendalltau = GraphResults("Kendall's tau")
+    kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
+    kendalltau.quality = stats.kendalltau(qualities_mes, qualities_th, nan_policy='raise')
+
+    spearmanr = GraphResults("Spearman's R")
+    spearmanr.costs = stats.spearmanr(costs_mes, costs_th, nan_policy='raise')
+    spearmanr.quality = stats.spearmanr(qualities_mes, qualities_th, nan_policy='raise')
+
+    #print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
+    #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
 
 
     fig.tight_layout()
@@ -305,6 +337,34 @@ elif args.nodes:
     os.chdir(dirname)
     results = process_all_graphs(args.nodes, dirname)
     # Draw histogram of the correlations
+    kendalltau_costs_rhos = []
+    kendalltau_qualities_rhos = []
+    spearmanr_costs_rhos = []
+    spearmanr_qualities_rhos = []
+    for  (kendaltau, spearmanr) in tqdm(results.values()):
+        #print(kendaltau.name, " Kendal's tau: cost=", kendaltau.costs, " and quality=", kendaltau.quality)
+        #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
+        kendalltau_costs_rhos.append(kendaltau.costs[0])
+        kendalltau_qualities_rhos.append(kendaltau.quality[0])
+        spearmanr_costs_rhos.append(spearmanr.costs[0])
+        spearmanr_qualities_rhos.append(spearmanr.quality[0])
+
+    # nan_in(kendalltau_costs_rhos, "kendalltau_costs_rhos")
+    # nan_in(kendalltau_qualities_rhos, "kendalltau_qualities_rhos")
+    # nan_in(spearmanr_costs_rhos, "spearmanr_costs_rhos")
+    # nan_in(spearmanr_qualities_rhos, "spearmanr_qualities_rhos")
+
+    fig, axes = plt.subplots(2,2)
+
+    axes[0][0].hist(kendalltau_costs_rhos, bins="auto", label="Costs (Kendall's Tau)", color="red")
+    axes[0][1].hist(spearmanr_costs_rhos, bins='auto', label="Costs (Spearman's R)", color="red")
+
+    axes[1][0].hist(kendalltau_qualities_rhos, bins="auto", label="Qualities (Kendall's Tau)")
+    axes[1][1].hist(spearmanr_qualities_rhos, bins='auto', label="Qualities (Spearman's r)")
+
+    fig.legend()
+
+    plt.show()
 
     # Try also to do a Fisher transformation to get a better idea
     os.chdir("..")
