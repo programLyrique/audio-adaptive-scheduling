@@ -31,10 +31,11 @@ parser = argparse.ArgumentParser(description="Generate graphs, execute them, and
     epilog="Please indicate in a pipeline.json file where the process thqt executes graphs is located.")
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("-g", "--graph", help="Specify non-degraded graphs to explore the quality of.", action="append")
-group.add_argument("-n", "--nodes", help="Explore all grqphs of size nodes", type=int)
+group.add_argument("-n", "--nodes", help="Explore all graphs of size nodes", type=int)
 parser.add_argument("-a", "--all", help="Explore all sizes up to the one precised by --nodes", action="store_true")
 parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
 parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
+parser.add_argument("--dir", help="Directory where to process")
 
 args = parser.parse_args()
 
@@ -72,6 +73,29 @@ def get_costs(csvname):
             nb_rows += 1
         return total / float(nb_rows), total
 
+def execute_graph(graph):
+    subprocess.run([graph_exec, "-m", "-b", "-c", "60000", graph], check=True)
+    # Get execution times for reports (-m option)
+    basename,_ = os.path.splitext(os.path.basename(graph))
+    reports = glob.glob("*"+basename + "*.csv")
+    reports.sort(reverse=True, key= lambda f: os.path.getmtime(f))
+    csvfile = reports[0]
+    tqdm.write("Retrieving monitoring info from "+ csvfile)
+    return get_costs(csvfile)
+
+def compare_audio_files(audiofiles):
+    audiofiles.sort()# Number 0 is always the non-degraded file
+    non_degraded = audiofiles.pop(0)
+    tqdm.write("Non degraded file is: " + non_degraded)
+    tqdm.write("Comparing degraded versions with non-degraded one.")
+    y_nd,sr_nd = quality.load_file(non_degraded, duration=2)
+    qualities = {}
+    for degraded in tqdm(audiofiles):
+        y,sr = quality.load_file(degraded, duration=2)
+        basename,_ = os.path.splitext(degraded)
+        qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
+    return qualities
+
 def process_graph(graph):
     tqdm.write("Processing " + graph, end=" ")
     basename,ext = os.path.splitext(graph)
@@ -89,31 +113,54 @@ def process_graph(graph):
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
         tqdm.write(graph)
-        subprocess.run([graph_exec, "-m", "-b", "-c", "60000", graph], check=True)
-        # Get execution times for reports (-m option)
-        basename,_ = os.path.splitext(os.path.basename(graph))
-        reports = glob.glob("*"+basename + "*.csv")
-        reports.sort(reverse=True, key= lambda f: os.path.getmtime(f))
-        csvfile = reports[0]
-        tqdm.write("Retrieving monitoring info from "+ csvfile)
-        costs[basename] = get_costs(csvfile)
+        execute_graph(graph, costs)
     # Get resulting audiofiles
     audiofiles = glob.glob("*.wav")
-    audiofiles.sort()# Number 0 is always the non-degraded file
-    tqdm.write(str(audiofiles))
-    non_degraded = audiofiles.pop(0)
-    tqdm.write("Non degraded file is: " + non_degraded)
-    tqdm.write("Comparing degraded versions with non-degraded one.")
-    y_nd,sr_nd = quality.load_file(non_degraded, duration=2)
-    qualities = {}
-    for degraded in tqdm(audiofiles):
-        y,sr = quality.load_file(degraded, duration=2)
-        basename,_ = os.path.splitext(degraded)
-        qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
-    # Get execution time
-    execFiles = glob.glob("*.csv")
-
+    qualities = compare_audio_files(audiofiles)
     return qualities, costs
+
+class GraphResults:
+    def __init__(self, name):
+        self.name = name
+        self.costs=None
+        self.quality=None
+
+def process_all_graphs(nb_nodes, dirname):
+    """Process on all weakly connected Dags up to nb_nodes"""
+    tqdm.write("Enumerating weakily DAGs up to " + str(nb_nodes) + " nodes with result in " + dirname)
+    #./main.native -dewx -n 5 --node-file ../nodes.ag
+    subprocess.run([graph_enum, "-dewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic], check=True)
+
+    # Getting the costs
+    results={}
+    tqdm.write("Executing graphs")
+    #Group them by non-degraded graphs
+    for non_degraded_graph in tqdm(glob.iglob("*-0.ag")):
+        # Get the prefix for this graph
+        prefix = non_degraded_graph.rsplit("-", maxsplit=1)[0]
+        tqdm.write(prefix)
+        results[prefix] = []
+        for graph in tqdm(glob.iglob(prefix+"*.ag")):
+            basename,_ = os.path.splitext(graph)
+            result= GraphResults(basename)
+            costs = execute_graph(graph)
+            result.costs = costs
+            results[prefix].append(result)
+        # Get audio files
+        audiofiles = glob.glob(prefix+"*.wav")
+        qualities = compare_audio_files(audiofiles)
+
+        # Update results
+        for result in results[prefix]:
+            #If we've not computed a quality for it, it is the non-degraded graph
+            result.quality = qualities.get(result.name, 1.0)
+
+    #TODO: compute correlation between costs for theoretical and experimental models
+    # Idem for qualities
+    # And then correlation between costs and qualities
+    # rather put that in the results
+    return results
+
 
 def results_to_csv(graphname, qualities, costs):
     fieldnames=["Quality", "Cost", "Total"]
@@ -248,8 +295,16 @@ if args.graph:
             plot(q_mes, c_mes, q_th, c_th)
         os.chdir("..")
 elif args.nodes:
-    print("Processing all graphs ", end="")
-    if args.all:
-        print("up to size ", args.nodes)
-    else:
-        print("of size ", args.nodes)
+    dirname= os.getcwd()
+    if args.dir:
+        dirname= args.dir
+    try:
+        os.mkdir(dirname)
+    except:
+        pass
+    os.chdir(dirname)
+    results = process_all_graphs(args.nodes, dirname)
+    # Draw histogram of the correlations
+
+    # Try also to do a Fisher transformation to get a better idea
+    os.chdir("..")
