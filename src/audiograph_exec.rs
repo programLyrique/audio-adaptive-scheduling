@@ -179,7 +179,7 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
 
     let mut output_file = sndfile::SndFile::open_write(graph_name + ".wav", samplerate, nb_channels as u32)?;
 
-    while  advance(buf_in[0].buffer_mut()) != 0  {
+    while advance(buf_in[0].buffer_mut()) != 0  {
         let start = PreciseTime::now();
         audio_graph.process(&buf_in, &mut buf_out);
         output_file.write_float(buf_out[0].buffer());

@@ -8,8 +8,6 @@ use std::collections::HashMap;
 
 use petgraph::graph::NodeIndex;
 
-use itertools::Itertools;
-
 use pest::error::Error as ParseError;
 
 use audiograph::*;
@@ -116,7 +114,7 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
 
     for node_infos in nodes.into_iter() {
         let id = node_infos.id.clone();
-        let node = DspNode::new(node_infos);
+        let node = DspNode::new(node_infos, nb_channels);
         let node_index = audiograph.add_node(node);
         node_indexes.insert(id, node_index);
     }

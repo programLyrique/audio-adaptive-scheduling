@@ -77,13 +77,16 @@ impl DspNode {
         DspNode {node_infos, node_processor}
     }
 
-    pub fn new(node_infos: audiograph_parser::Node) -> DspNode {
+    pub fn new(node_infos: audiograph_parser::Node, nb_channels: usize) -> DspNode {
         let node_processor : Box<dyn AudioEffect> = match node_infos.class_name.as_str() {
             "osc" => Box::new(Oscillator::from_node_infos(&node_infos)),
             "mod" => Box::new(Modulator::from_node_infos(&node_infos)),
             "mix" => Box::new(InputsOutputsAdaptor::from_node_infos(&node_infos)),
             "resampler" => Box::new(Resampler::from_node_infos(&node_infos)),
+            "source" => Box::new(InputsOutputsAdaptor::new(nb_channels, node_infos.nb_outlets as usize)),
+            "sink" => Box::new(InputsOutputsAdaptor::new(node_infos.nb_inlets as usize, nb_channels)),
             _ => {//We replace it by a default effect
+                println!("Unkwown node {:?}. Replacing it by a known one.", node_infos);
                 if node_infos.nb_inlets == 0 && node_infos.nb_outlets == 1 {
                     Box::new(Oscillator::new(0., 440, 1.))
                 }
@@ -317,11 +320,22 @@ impl AudioGraph {
         //self.print_schedule(&self.schedule);
         self.schedule = filtered_schedule;
         //self.schedule = self.schedule.iter().filter(|v| {dfs.discovered.is_visited(v)}).collect::<Vec<_>>();
-        if self.schedule.contains(&self.input_node_index) {
+        let mut source_index = 0;
+        for (i,e) in self.schedule.iter().enumerate() {
+            if *e == self.input_node_index {
+                self.has_source = true;
+                source_index = i;
+                break;
+            }
+        }
+        if self.has_source {
+            self.schedule.remove(source_index);
+        }
+        /*if self.schedule.contains(&self.input_node_index) {
             self.has_source = true;
             assert!(self.schedule[0] == self.input_node_index);
             self.schedule.remove(0);
-        }
+        }*/
     }
 
     /// Adjust buffer sizes and samplerates for nodes between two resamplers
