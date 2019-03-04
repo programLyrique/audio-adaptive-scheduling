@@ -16,31 +16,33 @@ use audio_adaptive::samplerate;
 fn osc_bench(c : &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(345987);
     let unity_interval = Uniform::new_inclusive(-1.,1.);
-    c.bench_function("osc",  move |b| {
+    c.bench_function_over_inputs("osc",  move |b: &mut Bencher, n: &usize| {
         let mut osc = Oscillator::new(0., 440, 1.);
-        let mut input = vec![DspEdge::new(1, 1, 256, 44100);1];
-        let size = input[0].buffer().len();
-        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(size).collect::<Vec<f32>>());
+        let mut input = vec![DspEdge::new(1, 1, *n, 44100);1];
+        //let size = input[0].buffer().len();
+        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(*n).collect::<Vec<f32>>());
         b.iter( ||
             {
-                let mut output = vec![DspEdge::new(1, 1, 256, 44100);1];
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100);1];
                 osc.process(&input, &mut output)}
-        )});
+        )},
+        vec![64, 128,256,512,1024,4096]);
 }
 
 fn mod_bench(c : &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(345987);
     let unity_interval = Uniform::new_inclusive(-1.,1.);
-    c.bench_function("mod",  move |b| {
+    c.bench_function_over_inputs("mod",  move |b: &mut Bencher, n: &usize| {
         let mut modu = Modulator::new(0., 440, 1.);
-        let mut input = vec![DspEdge::new(1, 1, 256, 44100);1];
-        let size = input[0].buffer().len();
-        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(size).collect::<Vec<f32>>());
+        let mut input = vec![DspEdge::new(1, 1, *n, 44100);1];
+        //let size = input[0].buffer().len();
+        input[0].buffer_mut().copy_from_slice(&rng.sample_iter(&unity_interval).take(*n).collect::<Vec<f32>>());
         b.iter( ||
             {
-                let mut output = vec![DspEdge::new(1, 1, 256, 44100);1];
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100);1];
                 modu.process(&input, &mut output)}
-            )});
+            )},
+        vec![64, 128,256,512,1024,4096]);
 }
 
 fn resampler_bench(c : &mut Criterion) {
