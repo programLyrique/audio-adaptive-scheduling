@@ -231,9 +231,12 @@ impl AudioGraph {
         let nb_outputs = node.node_processor.nb_outputs();
         let max_nb = std::cmp::max(nb_inputs, nb_outputs);
 
+
         if max_nb > self.input_edges.len() {
             //println!("Input: old={} new={}", self.input_edges.len(), max_nb);
             self.input_edges.resize(max_nb, DspEdge::new(1, 1, self.size, self.nominal_samplerate));}
+        // Actually not enough because there can be one port but several edges coming from it.
+        // So we need to call update_temp_buffers in update_schedule
         if max_nb > self.output_edges.len() {
             //println!("Output: old={} new={}", self.output_edges.len(), max_nb);
             self.output_edges.resize(max_nb, DspEdge::new(1, 1, self.size, self.nominal_samplerate));}
@@ -331,11 +334,6 @@ impl AudioGraph {
         if self.has_source {
             self.schedule.remove(source_index);
         }
-        /*if self.schedule.contains(&self.input_node_index) {
-            self.has_source = true;
-            assert!(self.schedule[0] == self.input_node_index);
-            self.schedule.remove(0);
-        }*/
     }
 
     /// Adjust buffer sizes and samplerates for nodes between two resamplers
@@ -462,7 +460,28 @@ impl AudioGraph {
         println!("");
     }
 
+    /// Adjust interchange buffers: temporary buffers used to copy audio between edges
+    fn update_temp_buffers(&mut self) {
+        for node in self.graph.node_indices() {
+            let nb_inputs = self.nb_inputs(node) as usize;
+            let nb_outputs = self.nb_outputs(node) as usize;
+            let max_inputs = std::cmp::max(nb_inputs, self.input_edges.len());
+            let max_outputs = std::cmp::max(nb_outputs, self.output_edges.len());
+            // Several edges entering the same port. SHould be rare
+            // (kind of an error because we don't do automatic mixing in that case actually). Only happens
+            // when there are several virtual sinks (to the real sink node).
+            if max_inputs > self.input_edges.len() {
+                self.input_edges.resize(max_inputs, DspEdge::new(1, 1, self.size, self.nominal_samplerate));
+            }
+            // This can often happen, when a port has several edges coming from it.
+            if max_outputs > self.output_edges.len() {
+                self.output_edges.resize(max_outputs, DspEdge::new(1, 1, self.size, self.nominal_samplerate));
+            }
+        }
+    }
+
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
+        self.update_temp_buffers();
         self.reset_buffer_sizes();
         self.buffer_size_resamplers();
         self.validate_buffer_sizes();
