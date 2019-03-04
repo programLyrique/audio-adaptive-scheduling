@@ -15,9 +15,9 @@ WHITESPACE = _{ " " | "\t" | NEWLINE }
 
 port_ident = ${ident ~ "." ~ port}
 
-edges = {port_ident ~ "->" ~ (edges | port_ident)}
+edge = {"->" ~ port_ident}
 
-
+edges = {port_ident ~ edge+}
 
 deadline = { "deadline" ~ "=" ~ fnumber}
 

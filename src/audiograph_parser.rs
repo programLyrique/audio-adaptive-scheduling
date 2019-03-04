@@ -89,9 +89,10 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         let mut edges = Vec::new();
 
         for inner_rule in inner_rules {
-            port_ident = inner_rule.into_inner();
+            port_ident = inner_rule.into_inner().next().unwrap().into_inner();
             let dst_id = port_ident.next().unwrap().as_str().to_string();
             let dst_port = port_ident.next().unwrap().as_str().parse().unwrap();
+            println!("dst_id = {}; dst_port = {}", dst_id, dst_port);
             edges.push(Edge {src_id, src_port, dst_id : dst_id.clone(), dst_port});
             src_id = dst_id;
             src_port = dst_port;
@@ -156,6 +157,14 @@ mod tests {
         println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
         assert!(audiograph.nb_nodes() == 5);
         assert!(audiograph.nb_edges() == 6);
+    }
+
+    #[test]
+    fn build_audiograph_down_test() {
+        let audiograph = parse_audiograph_from_file("downsampling_test.ag", 64, 2, 44_100).expect("Impossible to open file.");
+        println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
+        assert!(audiograph.nb_nodes() == 6);
+        assert!(audiograph.nb_edges() == 7);
     }
 
     #[test]
