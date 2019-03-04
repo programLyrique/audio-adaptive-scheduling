@@ -26,7 +26,7 @@ fn osc_bench(c : &mut Criterion) {
                 let mut output = vec![DspEdge::new(1, 1, *n, 44100);1];
                 osc.process(&input, &mut output)}
         )},
-        vec![64, 128,256,512,1024,4096]);
+        vec![64, 128,256,512,1024,2048,4096]);
 }
 
 fn mod_bench(c : &mut Criterion) {
@@ -42,7 +42,7 @@ fn mod_bench(c : &mut Criterion) {
                 let mut output = vec![DspEdge::new(1, 1, *n, 44100);1];
                 modu.process(&input, &mut output)}
             )},
-        vec![64, 128,256,512,1024,4096]);
+        vec![64, 128,256,512,1024,2048,4096]);
 }
 
 fn resampler_bench(c : &mut Criterion) {
