@@ -92,7 +92,6 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
             port_ident = inner_rule.into_inner().next().unwrap().into_inner();
             let dst_id = port_ident.next().unwrap().as_str().to_string();
             let dst_port = port_ident.next().unwrap().as_str().parse().unwrap();
-            println!("dst_id = {}; dst_port = {}", dst_id, dst_port);
             edges.push(Edge {src_id, src_port, dst_id : dst_id.clone(), dst_port});
             src_id = dst_id;
             src_port = dst_port;

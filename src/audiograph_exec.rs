@@ -30,7 +30,7 @@ use audio_adaptive::sndfile;
 const CHANNELS: i32 = 1;
 const SAMPLE_RATE: u32 = 44_100;
 const NB_CYCLES : u32 = 12000;
-const FRAMES_PER_BUFFER : usize = 256;
+const FRAMES_PER_BUFFER : usize = 512;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TimeMonitor {
@@ -227,6 +227,9 @@ fn main() {
               .short("m")
               .long("monitor")
               .help("Monitor execution and save it as a csv file."))
+        .arg(Arg::with_name("silent")
+                .long("silent")
+                .help("No output at all on the terminal."))
         .group(ArgGroup::with_name("execution-mode")
                 .args(&["real-time", "bounce"])
                 .required(true))
@@ -238,13 +241,16 @@ fn main() {
     let bounce = matches.is_present("bounce");
     let nb_cycles : u32 = matches.value_of("cycles").map_or(NB_CYCLES, |v| v.parse().unwrap_or(NB_CYCLES));
     let monitor = matches.is_present("monitor");
+    let silent = matches.is_present("silent");
 
     let mut audiograph = parse_audiograph_from_file(filename, FRAMES_PER_BUFFER, 1, SAMPLE_RATE).unwrap();
     audiograph.update_schedule().expect(&format!("Audio graph in {} is cyclic!!", filename));
 
     let basename = Path::new(filename).file_stem().and_then(OsStr::to_str).unwrap();
 
-    println!("Starting processing");
+    if !silent {
+        println!("Starting processing")
+    };
     let start = PreciseTime::now();
     if real_time {
         real_time_run(audiograph, basename.to_string(), nb_cycles, monitor).unwrap();
@@ -254,5 +260,5 @@ fn main() {
         bounce_run(audiograph, basename.to_string(), audio_input, nb_cycles, monitor).unwrap();
     }
     let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
-    println!("End processing in {}s", execution_time as f64 / 1_000_000.0);
+    if !silent {println!("End processing in {}s", execution_time as f64 / 1_000_000.0);}
 }

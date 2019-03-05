@@ -536,6 +536,9 @@ impl AudioEffect for AudioGraph {
             let mut edges = self.outputs_mut(self.input_node_index);
             let mut i = 0;
             while let Some(edge) = edges.next_edge(&self.graph) {
+                self.output_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+                self.output_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
+                debug_assert_eq!(self.graph.edge_weight(edge).unwrap().buffer().len(), self.output_edges[i].buffer().len());
                 self.graph.edge_weight_mut(edge).unwrap().buffer_mut().copy_from_slice(self.output_edges[i].buffer());
                 i += 1;
             }
@@ -595,11 +598,15 @@ impl AudioEffect for AudioGraph {
         // Sink
         //println!("Executing {}", self.graph.node_weight(self.output_node_index).unwrap().node_processor);
         //Prepare inputs
+
         //Quite inefficient, with allocating. Rather use a fixed vec with max number of inputs and outputs and a buffer pool
         // Or just use &[&DspEdge]??
         let mut edges = self.inputs_mut(self.output_node_index);
         let mut i = 0;
         while let Some(edge) = edges.next_edge(&self.graph) {
+            self.input_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
+            self.input_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
+            debug_assert_eq!(self.graph.edge_weight(edge).unwrap().buffer().len(), self.input_edges[i].buffer().len());
             self.input_edges[i].buffer_mut().copy_from_slice(self.graph.edge_weight(edge).unwrap().buffer());
             i += 1;
         }
