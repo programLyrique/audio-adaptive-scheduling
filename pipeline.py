@@ -155,6 +155,9 @@ def process_all_graphs(nb_nodes, dirname):
             audiofiles = glob.glob(prefix+"*.wav")
             qualities = compare_audio_files(audiofiles)
 
+            # For the correlation, we want the graphs in increasing rank
+            result_graph.sort(key=lambda res: int(res.name.rsplit("-", maxsplit=1)[1]))
+
             # Update results
             for result in result_graph:
                 #If we've not computed a quality for it, it is the non-degraded graph
@@ -188,13 +191,14 @@ def process_all_graphs(nb_nodes, dirname):
 
 
 def results_to_csv(graphname, qualities, costs):
-    fieldnames=["Quality", "Cost", "Total"]
+    fieldnames=["Name", "Quality", "Cost", "Total"]
     with open(graphname+".csv", "w", newline='') as csvfile:
         result={}
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter='\t')
         writer.writeheader()
         #Get cost original graph
         name = list(sorted(costs.keys()))[0]
+        result["Name"] = name
         cost, total = costs[name]
         result["Quality"] = 1.0
         result["Cost"] = cost
@@ -207,6 +211,30 @@ def results_to_csv(graphname, qualities, costs):
             result["Cost"] = cost
             result["Total"] = total
             writer.writerow(result)
+
+def result_all_graphs_to_csv(name, results):
+    fieldnames = ["Name", "CostKT", "CostPKT", "QualityKT", "QualityPKT", "CostSR", "CostPSR", "QualitySR", "QualityPSR"]
+    with open(name, "w", newline='') as csvfile:
+        result={}
+        writer = csv.DictWriter(csvfile, fieldnames, delimiter='\t')
+        writer.writeheader()
+        for (name, (kendalltau, spearmanr)) in tqdm(results.items()):
+            assert(kendalltau.name == spearmanr.name)
+            result["Name"]= name
+
+            result["CostKT"] = kendalltau.costs[0]
+            result["CostPKT"] = kendalltau.costs[1]
+
+            result["QualityKT"] = kendalltau.quality[0]
+            result["QualityPKT"] = kendalltau.quality[1]
+
+            result["CostSR"] = spearmanr.costs[0]
+            result["CostPSR"] = spearmanr.costs[1]
+
+            result["QualitySR"] = spearmanr.quality[0]
+            result["QualityPSR"] = spearmanr.quality[1]
+            writer.writerow(result)
+
 
 def load_csv(filename):
     """Load quality and cost from the theoretical model"""
@@ -247,6 +275,8 @@ def nan_in(l, name):
         if np.isnan(e):
             print("NaN detected in", name, " at iteration ", i)
 
+
+
 def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     fig, axes = plt.subplots(2,1)
 
@@ -255,8 +285,6 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     texts_mes= []
     for (i, (quality, cost)) in enumerate(zip(qualities_mes, costs_mes)):
         texts_mes.append(ax1.text(quality, cost, str(i), ha='center', va='center'))
-
-    qualities_mes,costs_mes = sort_by_quality(qualities_mes, costs_mes)
 
     #print("Measured: ", q, c_cycle)
 
@@ -278,8 +306,6 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     ax2.set_ylabel("cost")
     ax2.set_xlabel("quality")
 
-    qualities_th,costs_th = sort_by_quality(qualities_th, costs_th)
-
     ax2.scatter(qualities_th, costs_th,  label="Model", color=color)
     ax2.tick_params(axis='y', labelcolor=color)
     ax2.grid(True)
@@ -296,8 +322,8 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     spearmanr.costs = stats.spearmanr(costs_mes, costs_th, nan_policy='raise')
     spearmanr.quality = stats.spearmanr(qualities_mes, qualities_th, nan_policy='raise')
 
-    #print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
-    #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
+    print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
+    print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
 
 
     fig.tight_layout()
@@ -335,36 +361,45 @@ elif args.nodes:
     except:
         pass
     os.chdir(dirname)
-    results = process_all_graphs(args.nodes, dirname)
-    # Draw histogram of the correlations
-    kendalltau_costs_rhos = []
-    kendalltau_qualities_rhos = []
-    spearmanr_costs_rhos = []
-    spearmanr_qualities_rhos = []
-    for  (kendaltau, spearmanr) in tqdm(results.values()):
-        #print(kendaltau.name, " Kendal's tau: cost=", kendaltau.costs, " and quality=", kendaltau.quality)
-        #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
-        kendalltau_costs_rhos.append(kendaltau.costs[0])
-        kendalltau_qualities_rhos.append(kendaltau.quality[0])
-        spearmanr_costs_rhos.append(spearmanr.costs[0])
-        spearmanr_qualities_rhos.append(spearmanr.quality[0])
+    if not args.only_draw:
+        results = process_all_graphs(args.nodes, dirname)
+        # Draw histogram of the correlations
+        kendalltau_costs_rhos = []
+        kendalltau_qualities_rhos = []
+        spearmanr_costs_rhos = []
+        spearmanr_qualities_rhos = []
+        for  (kendaltau, spearmanr) in tqdm(results.values()):
+            #print(kendaltau.name, " Kendal's tau: cost=", kendaltau.costs, " and quality=", kendaltau.quality)
+            #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
+            kendalltau_costs_rhos.append(kendaltau.costs[0])
+            kendalltau_qualities_rhos.append(kendaltau.quality[0])
+            spearmanr_costs_rhos.append(spearmanr.costs[0])
+            spearmanr_qualities_rhos.append(spearmanr.quality[0])
+        result_all_graphs_to_csv(dirname + "-correlations.csv", results)
 
     # nan_in(kendalltau_costs_rhos, "kendalltau_costs_rhos")
     # nan_in(kendalltau_qualities_rhos, "kendalltau_qualities_rhos")
     # nan_in(spearmanr_costs_rhos, "spearmanr_costs_rhos")
     # nan_in(spearmanr_qualities_rhos, "spearmanr_qualities_rhos")
 
-    fig, axes = plt.subplots(2,2)
+    kendalltau_costs_rhos = np.array(kendalltau_costs_rhos)[~np.isnan(kendalltau_costs_rhos)]
+    kendalltau_qualities_rhos = np.array(kendalltau_qualities_rhos)[~np.isnan(kendalltau_qualities_rhos)]
+    spearmanr_costs_rhos = np.array(spearmanr_costs_rhos)[~np.isnan(spearmanr_costs_rhos)]
+    spearmanr_qualities_rhos = np.array(spearmanr_qualities_rhos)[~np.isnan(spearmanr_qualities_rhos)]
 
-    axes[0][0].hist(kendalltau_costs_rhos, bins="auto", label="Costs (Kendall's Tau)", color="red")
-    axes[0][1].hist(spearmanr_costs_rhos, bins='auto', label="Costs (Spearman's R)", color="red")
 
-    axes[1][0].hist(kendalltau_qualities_rhos, bins="auto", label="Qualities (Kendall's Tau)")
-    axes[1][1].hist(spearmanr_qualities_rhos, bins='auto', label="Qualities (Spearman's r)")
+    if args.draw or args.only_draw:
+        fig, axes = plt.subplots(2,2)
 
-    fig.legend()
+        axes[0][0].hist(kendalltau_costs_rhos, bins=20, label="Costs (Kendall's Tau)", color="red", range=[-1,1])
+        axes[0][1].hist(spearmanr_costs_rhos, bins=20, label="Costs (Spearman's R)", color="red", range=[-1,1])
 
-    plt.show()
+        axes[1][0].hist(kendalltau_qualities_rhos, bins=20, label="Qualities (Kendall's Tau)", range=[-1,1])
+        axes[1][1].hist(spearmanr_qualities_rhos, bins=20, label="Qualities (Spearman's r)", range=[-1,1])
+
+        fig.legend()
+
+        plt.show()
 
     # Try also to do a Fisher transformation to get a better idea
     os.chdir("..")
