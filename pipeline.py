@@ -235,6 +235,20 @@ def result_all_graphs_to_csv(name, results):
             result["QualityPSR"] = spearmanr.quality[1]
             writer.writerow(result)
 
+def load_correlations(filename):
+    """LOad correlations from csv file"""
+    with open(filename, "r", newline='') as csvfile:
+        csvreader = csv.DictReader(csvfile, delimiter='\t')
+        c_kt = []
+        q_kt = []
+        c_sr = []
+        q_sr = []
+        for row in csvreader:
+            c_kt.append(float(row["CostKT"]))
+            q_kt.append(float(row["QualityKT"]))
+            c_sr.append(float(row["CostSR"]))
+            q_sr.append(float(row["QualitySR"]))
+        return c_kt, q_kt, c_sr, q_sr
 
 def load_csv(filename):
     """Load quality and cost from the theoretical model"""
@@ -361,13 +375,12 @@ elif args.nodes:
     except:
         pass
     os.chdir(dirname)
+    kendalltau_costs_rhos = []
+    kendalltau_qualities_rhos = []
+    spearmanr_costs_rhos = []
+    spearmanr_qualities_rhos = []
     if not args.only_draw:
         results = process_all_graphs(args.nodes, dirname)
-        # Draw histogram of the correlations
-        kendalltau_costs_rhos = []
-        kendalltau_qualities_rhos = []
-        spearmanr_costs_rhos = []
-        spearmanr_qualities_rhos = []
         for  (kendaltau, spearmanr) in tqdm(results.values()):
             #print(kendaltau.name, " Kendal's tau: cost=", kendaltau.costs, " and quality=", kendaltau.quality)
             #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
@@ -376,16 +389,22 @@ elif args.nodes:
             spearmanr_costs_rhos.append(spearmanr.costs[0])
             spearmanr_qualities_rhos.append(spearmanr.quality[0])
         result_all_graphs_to_csv(dirname + "-correlations.csv", results)
+    else:
+        kendalltau_costs_rhos,kendalltau_qualities_rhos,spearmanr_costs_rhos,spearmanr_qualities_rhos=load_correlations(dirname + "-correlations.csv")
 
     # nan_in(kendalltau_costs_rhos, "kendalltau_costs_rhos")
     # nan_in(kendalltau_qualities_rhos, "kendalltau_qualities_rhos")
     # nan_in(spearmanr_costs_rhos, "spearmanr_costs_rhos")
     # nan_in(spearmanr_qualities_rhos, "spearmanr_qualities_rhos")
 
-    kendalltau_costs_rhos = np.array(kendalltau_costs_rhos)[~np.isnan(kendalltau_costs_rhos)]
-    kendalltau_qualities_rhos = np.array(kendalltau_qualities_rhos)[~np.isnan(kendalltau_qualities_rhos)]
-    spearmanr_costs_rhos = np.array(spearmanr_costs_rhos)[~np.isnan(spearmanr_costs_rhos)]
-    spearmanr_qualities_rhos = np.array(spearmanr_qualities_rhos)[~np.isnan(spearmanr_qualities_rhos)]
+    kendalltau_costs_rhos = np.array(kendalltau_costs_rhos)
+    kendalltau_costs_rhos = kendalltau_costs_rhos[~np.isnan(kendalltau_costs_rhos)]
+    kendalltau_qualities_rhos = np.array(kendalltau_qualities_rhos)
+    kendalltau_qualities_rhos = kendalltau_qualities_rhos[~np.isnan(kendalltau_qualities_rhos)]
+    spearmanr_costs_rhos = np.array(spearmanr_costs_rhos)
+    spearmanr_costs_rhos = spearmanr_costs_rhos[~np.isnan(spearmanr_costs_rhos)]
+    spearmanr_qualities_rhos = np.array(spearmanr_qualities_rhos)
+    spearmanr_qualities_rhos = spearmanr_qualities_rhos[~np.isnan(spearmanr_qualities_rhos)]
 
 
     if args.draw or args.only_draw:
