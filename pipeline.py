@@ -25,6 +25,7 @@ from adjustText import adjust_text
 from operator import itemgetter
 
 from scipy import stats
+import bisect
 
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
@@ -60,6 +61,13 @@ finally:
     print("Graph execution with: ", graph_exec)
     print("Graph enumeration with: ", graph_enum)
     print("Using node dictionary: ", nodes_dic)
+
+def index(a, x):
+    'Locate the leftmost value exactly equal to x'
+    i = bisectbisect_left(a, x)
+    if i != len(a) and a[i] == x:
+        return i
+    raise ValueError
 
 def get_costs(csvname):
     """Get csv file with execution times and compute average execution time
@@ -153,13 +161,18 @@ def process_all_graphs(nb_nodes, dirname):
             result.costs = costs
             result_graph.append(result)
 
+        result_dict = {}
+
+        nb_degraded_graphs = len(result_graph)
+
+        result_dict["NbDegradedGraphs"] = nb_degraded_graphs
         # We also want to get the following measures:
         # - are the worst/best graphs in terms of costs and quality the same in
         #   the theoretical models and in the experiments. How close are they in both vectors? (in inversions? In position distances?)
         # - are costs and qualities correlated? In the experimental model first. And in the theoretical one? (We could even prove it)
         # - are all the degraded graphs faster than the non-degraded one? And at least one? How many? Which percentage?
         # Shape questions:
-        # - how many degraded graphs in average for one graph?
+        # - DONE how many degraded graphs in average for one graph?
         # - how many resamplers have been inserted? Downsamplers? Upsamplers?
         # TODO later: try to degrade in same order as heuristics and see if it correlates with the order in quality and in cost
         # TODO: case of a source => use a real audio file? Or generate a sin wave? Or just noise? Or don't generate sources here?
@@ -168,7 +181,7 @@ def process_all_graphs(nb_nodes, dirname):
         # TODO: apply merge operation for resampler (the one that inserts a mixer and then a resampler instead of several resamplers)
 
         # Meaningless to compute rank correlation on a vector of size 1
-        if len(result_graph) > 1:
+        if nb_degraded_graphs > 0:
             # Get audio files
             audiofiles = glob.glob(prefix+"*.wav")
             qualities = compare_audio_files(audiofiles)
@@ -192,13 +205,7 @@ def process_all_graphs(nb_nodes, dirname):
             csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
             qualities_th, costs_th = load_csv(csvname)
 
-            # print("Results:", result_graph)
-            #
-            # print("Theoretical costs: ", costs_th)
-            # print("Measured costs: ", costs_mes)
-            # print("Theoretical qualities: ", qualities_th)
-            # print("Measured qualities: ", qualities_mes)
-
+            # Correlations
             kendalltau = GraphResults(prefix)
             kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
             kendalltau.quality = stats.kendalltau(qualities_mes, qualities_th, nan_policy='raise')
@@ -210,9 +217,20 @@ def process_all_graphs(nb_nodes, dirname):
             print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
             print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
 
-            #input("Press a key to continue.")
 
-            results[prefix] = (kendalltau, spearmanr)
+            result_dict["SpearmanR"] = spearmanr
+            result_dict["KendallTau"] = kendalltau
+
+            # Speed increase? How many graphs are quicker than the non-degraded one
+            increasing_costs_mes = list(sorted(result_graph, key=lambda res: res.costs))
+            quicker = 0
+            while quicker < len(increasing_costs_mes):
+                if int(increasing_costs_mes[quicker].name.rsplit("-", maxsplit=1)[1]) == 0:
+                    break
+                quicker = quicker + 1
+            result_dict["QuickerMes"] = quicker
+
+        results[prefix] = result_dict
 
         # We remove the audio files here as they can take a log of space
         audiofiles = glob.glob(prefix+"*.wav")
@@ -245,14 +263,19 @@ def results_to_csv(graphname, qualities, costs):
             writer.writerow(result)
 
 def result_all_graphs_to_csv(name, results):
-    fieldnames = ["Name", "CostKT", "CostPKT", "QualityKT", "QualityPKT", "CostSR", "CostPSR", "QualitySR", "QualityPSR"]
+    fieldnames = ["Name", "NbDegradedGraphs", "CostKT", "CostPKT", "QualityKT", "QualityPKT", "CostSR", "CostPSR", "QualitySR", "QualityPSR"]
     with open(name, "w", newline='') as csvfile:
         result={}
         writer = csv.DictWriter(csvfile, fieldnames, delimiter='\t')
         writer.writeheader()
-        for (name, (kendalltau, spearmanr)) in tqdm(results.items()):
+        for (name, res) in tqdm(results.items()):
+            kendalltau = res["KendallTau"]
+            spearmanr = res["SpearmanR"]
+
             assert(kendalltau.name == spearmanr.name)
             result["Name"]= name
+
+            result["NbDegradedGraphs"] = res["NbDegradedGraphs"]
 
             result["CostKT"] = kendalltau.costs[0]
             result["CostPKT"] = kendalltau.costs[1]
@@ -320,7 +343,9 @@ def nan_in(l, name):
         if np.isnan(e):
             print("NaN detected in", name, " at iteration ", i)
 
-
+def fisher_mean(r):
+    """Use Fisher's transform to compute an overall correlation"""
+    return np.tanh(np.mean(np.arctanh(r)))
 
 def plot(qualities_mes, costs_mes, qualities_th, costs_th):
     fig, axes = plt.subplots(2,1)
@@ -412,7 +437,9 @@ elif args.nodes:
     spearmanr_qualities_rhos = []
     if not args.only_draw:
         results = process_all_graphs(args.nodes, dirname)
-        for  (kendaltau, spearmanr) in tqdm(results.values()):
+        for  result in tqdm(results.values()):
+            kendaltau = result["KendallTau"]
+            spearmanr = result["SpearmanR"]
             #print(kendaltau.name, " Kendal's tau: cost=", kendaltau.costs, " and quality=", kendaltau.quality)
             #print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
             kendalltau_costs_rhos.append(kendaltau.costs[0])
@@ -437,6 +464,13 @@ elif args.nodes:
     spearmanr_qualities_rhos = np.array(spearmanr_qualities_rhos)
     spearmanr_qualities_rhos = spearmanr_qualities_rhos[~np.isnan(spearmanr_qualities_rhos)]
 
+    # f_kd_cost = fisher_mean(kendalltau_costs_rhos)
+    # f_kd_quality = fisher_mean(kendalltau_qualities_rhos)
+    # f_sr_cost = fisher_mean(spearmanr_costs_rhos)
+    # f_sr_quality = fisher_mean(spearmanr_qualities_rhos)
+    # print("Correlations: ")
+    # print("Cost: ", f_kd_cost, " (kendall's tau) ; ", f_sr_cost, " (spearman's r)")
+    # print("Quality: ", f_kd_quality, " (kendall's tau) ; ", f_sr_quality, " (spearman's r)")
 
     if args.draw or args.only_draw:
         fig, axes = plt.subplots(2,2)
