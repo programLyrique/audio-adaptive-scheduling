@@ -76,7 +76,7 @@ def get_costs(csvname):
 
 def execute_graph(graph):
     tqdm.write("Executing graph " + graph)
-    subprocess.run([graph_exec, "-m", "-b", "-c", "60000", graph], check=True)
+    subprocess.run([graph_exec, "-m", "-b", "-c", "10000", graph], check=True)
     # Get execution times for reports (-m option)
     basename,_ = os.path.splitext(os.path.basename(graph))
     reports = glob.glob("*"+basename + "*.csv")
@@ -89,10 +89,11 @@ def compare_audio_files(audiofiles):
     audiofiles.sort()# Number 0 is always the non-degraded file
     non_degraded = audiofiles.pop(0)
     tqdm.write("Non degraded file is: " + non_degraded)
+    tqdm.write("Degraded files are: " + str(audiofiles))
     tqdm.write("Comparing degraded versions with non-degraded one.")
     y_nd,sr_nd = quality.load_file(non_degraded, duration=2)
     qualities = {}
-    for degraded in tqdm(audiofiles):
+    for degraded in tqdm(sorted(audiofiles)):
         y,sr = quality.load_file(degraded, duration=2)
         basename,_ = os.path.splitext(degraded)
         qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
@@ -128,6 +129,9 @@ class GraphResults:
         self.costs=None
         self.quality=None
 
+    def __repr__(self):
+        return "{}: {}, {}".format(self.name, self.costs, self.quality)
+
 def process_all_graphs(nb_nodes, dirname):
     """Process on all weakly connected Dags up to nb_nodes"""
     tqdm.write("Enumerating weakily DAGs up to " + str(nb_nodes) + " nodes with result in " + dirname)
@@ -148,6 +152,20 @@ def process_all_graphs(nb_nodes, dirname):
             costs = execute_graph(graph)
             result.costs = costs
             result_graph.append(result)
+
+        # We also want to get the following measures:
+        # - are the worst/best graphs in terms of costs and quality the same in
+        #   the theoretical models and in the experiments. How close are they in both vectors? (in inversions? In position distances?)
+        # - are costs and qualities correlated? In the experimental model first. And in the theoretical one? (We could even prove it)
+        # - are all the degraded graphs faster than the non-degraded one? And at least one? How many? Which percentage?
+        # Shape questions:
+        # - how many degraded graphs in average for one graph?
+        # - how many resamplers have been inserted? Downsamplers? Upsamplers?
+        # TODO later: try to degrade in same order as heuristics and see if it correlates with the order in quality and in cost
+        # TODO: case of a source => use a real audio file? Or generate a sin wave? Or just noise? Or don't generate sources here?
+        # Because for now, sources just output a 0 signal, so we get the same quality for each version and
+        # it does not give an useful ranking for the measured quality.
+        # TODO: apply merge operation for resampler (the one that inserts a mixer and then a resampler instead of several resamplers)
 
         # Meaningless to compute rank correlation on a vector of size 1
         if len(result_graph) > 1:
@@ -172,7 +190,14 @@ def process_all_graphs(nb_nodes, dirname):
 
             # We should get them in the same graph order as in the measured one (non-degraded first)
             csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
-            costs_th, qualities_th = load_csv(csvname)
+            qualities_th, costs_th = load_csv(csvname)
+
+            # print("Results:", result_graph)
+            #
+            # print("Theoretical costs: ", costs_th)
+            # print("Measured costs: ", costs_mes)
+            # print("Theoretical qualities: ", qualities_th)
+            # print("Measured qualities: ", qualities_mes)
 
             kendalltau = GraphResults(prefix)
             kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
@@ -185,7 +210,14 @@ def process_all_graphs(nb_nodes, dirname):
             print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
             print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
 
+            #input("Press a key to continue.")
+
             results[prefix] = (kendalltau, spearmanr)
+
+        # We remove the audio files here as they can take a log of space
+        audiofiles = glob.glob(prefix+"*.wav")
+        for audiofile in audiofiles:
+            os.remove(audiofile)
 
     return results
 
@@ -270,7 +302,6 @@ def q_c_dict_to_list(qualities, costs):
     q = []
     c_cycle = []
     # graph 0
-    c_cycle.append
     q.append(1.)
     name = list(sorted(costs.keys()))[0]
     cost, total = costs[name]
