@@ -728,7 +728,7 @@ pub struct InputsOutputsAdaptor {
 
 impl InputsOutputsAdaptor {
     pub fn new(nb_inputs: usize, nb_outputs: usize) -> InputsOutputsAdaptor {
-        assert!(nb_inputs % nb_outputs == 0 || nb_outputs % nb_inputs == 0 );
+        //assert!(nb_inputs % nb_outputs == 0 || nb_outputs % nb_inputs == 0 );//We don't need that anymore
         let stride = if nb_outputs > nb_inputs {nb_outputs / nb_inputs} else {nb_inputs / nb_outputs};
         InputsOutputsAdaptor {nb_inputs, nb_outputs, stride}
     }
@@ -756,19 +756,26 @@ impl AudioEffect for InputsOutputsAdaptor {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
-        debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
+        //Actually, not a problem if it's not the case. The last inputs/outputs will just be the same number
+        //debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
 
         if self.nb_outputs > self.nb_inputs {
-            for (i,group) in outputs.chunks_mut(self.stride).enumerate() {
+            let iter = outputs.chunks_exact_mut(self.stride);
+            for (i,group) in iter.enumerate() {
+                // Copy the last input in the remaining outputs
+                let index = std::cmp::min(i, inputs.len() - 1);
                 for output in group.iter_mut() {
-                    output.buffer_mut().copy_from_slice(inputs[i].buffer());
+                    output.buffer_mut().copy_from_slice(inputs[index].buffer());
                 }
             }
         }
         else {
+
             for (i,group) in inputs.chunks(self.stride).enumerate() {
+                //To handle the last chunk which will be mixed in the last output with the previous chunk
+                let index = std::cmp::min(i, outputs.len() - 1);
                 for input in group {
-                    mixer(outputs[i].buffer_mut(), input.buffer());
+                    mixer(outputs[index].buffer_mut(), input.buffer());
                 }
             }
         }
