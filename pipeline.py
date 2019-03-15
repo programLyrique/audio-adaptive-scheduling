@@ -27,7 +27,6 @@ from operator import itemgetter
 from scipy import stats
 import bisect
 
-
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
     epilog="Please indicate in a pipeline.json file where the process thqt executes graphs is located.")
 group = parser.add_mutually_exclusive_group(required=True)
@@ -36,6 +35,8 @@ group.add_argument("-n", "--nodes", help="Explore all graphs of size nodes", typ
 parser.add_argument("-a", "--all", help="Explore all sizes up to the one precised by --nodes", action="store_true")
 parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
 parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
+parser.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
+parser.add_argument("--no-error", help="Continue in spite of errors", action="store_true")
 parser.add_argument("--dir", help="Directory where to process")
 
 args = parser.parse_args()
@@ -140,12 +141,17 @@ class GraphResults:
     def __repr__(self):
         return "{}: {}, {}".format(self.name, self.costs, self.quality)
 
-def process_all_graphs(nb_nodes, dirname):
+def process_all_graphs(nb_nodes, dirname, random=False):
     """Process on all weakly connected Dags up to nb_nodes"""
     tqdm.write("Enumerating weakily DAGs up to " + str(nb_nodes) + " nodes with result in " + dirname)
     #./main.native -dewx -n 5 --node-file ../nodes.ag
-    subprocess.run([graph_enum, "-dewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic], check=True)
+    command = [graph_enum]
+    if random:
+        command.extend(["-l", "--edge-prob", "0.3"])
+    command.extend(["-dewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])
+    subprocess.run(command, check=True)
 
+    nb_errors=0
     results={}
     tqdm.write("Executing graphs")
     #Group them by non-degraded graphs
@@ -154,89 +160,97 @@ def process_all_graphs(nb_nodes, dirname):
         prefix = non_degraded_graph.rsplit("-", maxsplit=1)[0]
         tqdm.write(prefix)
         result_graph=[]
-        for graph in tqdm(sorted(glob.iglob(prefix+"*.ag"))):
-            basename,_ = os.path.splitext(graph)
-            result= GraphResults(basename)
-            costs = execute_graph(graph)
-            result.costs = costs
-            result_graph.append(result)
+        try:
+            for graph in tqdm(sorted(glob.iglob(prefix+"*.ag"))):
+                basename,_ = os.path.splitext(graph)
+                result= GraphResults(basename)
+                costs = execute_graph(graph)
+                result.costs = costs
+                result_graph.append(result)
+        except subprocess.CalledProcessError as err:
+            if args.no_error:
+                print("Error executing graph: {0}".format(err))
+                nb_errors = nb_errors + 1
+            else:
+                raise err
+        else:
+            result_dict = {}
 
-        result_dict = {}
+            nb_degraded_graphs = len(result_graph)
 
-        nb_degraded_graphs = len(result_graph)
+            result_dict["NbDegradedGraphs"] = nb_degraded_graphs
+            # We also want to get the following measures:
+            # - are the worst/best graphs in terms of costs and quality the same in
+            #   the theoretical models and in the experiments. How close are they in both vectors? (in inversions? In position distances?)
+            # - are costs and qualities correlated? In the experimental model first. And in the theoretical one? (We could even prove it)
+            # - are all the degraded graphs faster than the non-degraded one? And at least one? How many? Which percentage?
+            # Shape questions:
+            # - DONE how many degraded graphs in average for one graph?
+            # - how many resamplers have been inserted? Downsamplers? Upsamplers?
+            # TODO later: try to degrade in same order as heuristics and see if it correlates with the order in quality and in cost
+            # TODO: case of a source => use a real audio file? Or generate a sin wave? Or just noise? Or don't generate sources here?
+            # Because for now, sources just output a 0 signal, so we get the same quality for each version and
+            # it does not give an useful ranking for the measured quality.
+            # TODO: apply merge operation for resampler (the one that inserts a mixer and then a resampler instead of several resamplers)
 
-        result_dict["NbDegradedGraphs"] = nb_degraded_graphs
-        # We also want to get the following measures:
-        # - are the worst/best graphs in terms of costs and quality the same in
-        #   the theoretical models and in the experiments. How close are they in both vectors? (in inversions? In position distances?)
-        # - are costs and qualities correlated? In the experimental model first. And in the theoretical one? (We could even prove it)
-        # - are all the degraded graphs faster than the non-degraded one? And at least one? How many? Which percentage?
-        # Shape questions:
-        # - DONE how many degraded graphs in average for one graph?
-        # - how many resamplers have been inserted? Downsamplers? Upsamplers?
-        # TODO later: try to degrade in same order as heuristics and see if it correlates with the order in quality and in cost
-        # TODO: case of a source => use a real audio file? Or generate a sin wave? Or just noise? Or don't generate sources here?
-        # Because for now, sources just output a 0 signal, so we get the same quality for each version and
-        # it does not give an useful ranking for the measured quality.
-        # TODO: apply merge operation for resampler (the one that inserts a mixer and then a resampler instead of several resamplers)
+            # Meaningless to compute rank correlation on a vector of size 1
+            if nb_degraded_graphs > 0:
+                # Get audio files
+                audiofiles = glob.glob(prefix+"*.wav")
+                qualities = compare_audio_files(audiofiles)
 
-        # Meaningless to compute rank correlation on a vector of size 1
-        if nb_degraded_graphs > 0:
-            # Get audio files
-            audiofiles = glob.glob(prefix+"*.wav")
-            qualities = compare_audio_files(audiofiles)
+                # For the correlation, we want the graphs in increasing rank
+                result_graph.sort(key=lambda res: int(res.name.rsplit("-", maxsplit=1)[1]))
 
-            # For the correlation, we want the graphs in increasing rank
-            result_graph.sort(key=lambda res: int(res.name.rsplit("-", maxsplit=1)[1]))
+                # Update results
+                for result in result_graph:
+                    #If we've not computed a quality for it, it is the non-degraded graph
+                    result.quality = qualities.get(result.name, 1.0)
 
-            # Update results
-            for result in result_graph:
-                #If we've not computed a quality for it, it is the non-degraded graph
-                result.quality = qualities.get(result.name, 1.0)
+                costs_mes=[]
+                qualities_mes=[]
+                for result in result_graph:
+                    cost,_ = result.costs
+                    costs_mes.append(cost)
+                    qualities_mes.append(result.quality)
 
-            costs_mes=[]
-            qualities_mes=[]
-            for result in result_graph:
-                cost,_ = result.costs
-                costs_mes.append(cost)
-                qualities_mes.append(result.quality)
+                # We should get them in the same graph order as in the measured one (non-degraded first)
+                csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
+                qualities_th, costs_th = load_csv(csvname)
 
-            # We should get them in the same graph order as in the measured one (non-degraded first)
-            csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
-            qualities_th, costs_th = load_csv(csvname)
+                # Correlations
+                kendalltau = GraphResults(prefix)
+                kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
+                kendalltau.quality = stats.kendalltau(qualities_mes, qualities_th, nan_policy='raise')
 
-            # Correlations
-            kendalltau = GraphResults(prefix)
-            kendalltau.costs = stats.kendalltau(costs_mes, costs_th, nan_policy='raise')
-            kendalltau.quality = stats.kendalltau(qualities_mes, qualities_th, nan_policy='raise')
+                spearmanr = GraphResults(prefix)
+                spearmanr.costs = stats.spearmanr(costs_mes, costs_th, nan_policy='raise')
+                spearmanr.quality = stats.spearmanr(qualities_mes, qualities_th, nan_policy='raise')
 
-            spearmanr = GraphResults(prefix)
-            spearmanr.costs = stats.spearmanr(costs_mes, costs_th, nan_policy='raise')
-            spearmanr.quality = stats.spearmanr(qualities_mes, qualities_th, nan_policy='raise')
-
-            print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
-            print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
+                print(kendalltau.name, " Kendal's tau: cost=", kendalltau.costs, " and quality=", kendalltau.quality)
+                print(spearmanr.name, " Spearman's r: cost=", spearmanr.costs, " and quality=", spearmanr.quality)
 
 
-            result_dict["SpearmanR"] = spearmanr
-            result_dict["KendallTau"] = kendalltau
+                result_dict["SpearmanR"] = spearmanr
+                result_dict["KendallTau"] = kendalltau
 
-            # Speed increase? How many graphs are quicker than the non-degraded one
-            increasing_costs_mes = list(sorted(result_graph, key=lambda res: res.costs))
-            quicker = 0
-            while quicker < len(increasing_costs_mes):
-                if int(increasing_costs_mes[quicker].name.rsplit("-", maxsplit=1)[1]) == 0:
-                    break
-                quicker = quicker + 1
-            result_dict["QuickerMes"] = quicker
+                # Speed increase? How many graphs are quicker than the non-degraded one
+                increasing_costs_mes = list(sorted(result_graph, key=lambda res: res.costs))
+                quicker = 0
+                while quicker < len(increasing_costs_mes):
+                    if int(increasing_costs_mes[quicker].name.rsplit("-", maxsplit=1)[1]) == 0:
+                        break
+                    quicker = quicker + 1
+                result_dict["QuickerMes"] = quicker
 
-        results[prefix] = result_dict
+            results[prefix] = result_dict
 
         # We remove the audio files here as they can take a log of space
         audiofiles = glob.glob(prefix+"*.wav")
         for audiofile in audiofiles:
             os.remove(audiofile)
 
+    print(nb_errors, " graphs were discarded due to execution errors")
     return results
 
 
@@ -436,7 +450,7 @@ elif args.nodes:
     spearmanr_costs_rhos = []
     spearmanr_qualities_rhos = []
     if not args.only_draw:
-        results = process_all_graphs(args.nodes, dirname)
+        results = process_all_graphs(args.nodes, dirname, args.random)
         for  result in tqdm(results.values()):
             kendaltau = result["KendallTau"]
             spearmanr = result["SpearmanR"]
@@ -466,11 +480,11 @@ elif args.nodes:
 
     # f_kd_cost = fisher_mean(kendalltau_costs_rhos)
     # f_kd_quality = fisher_mean(kendalltau_qualities_rhos)
-    # f_sr_cost = fisher_mean(spearmanr_costs_rhos)
-    # f_sr_quality = fisher_mean(spearmanr_qualities_rhos)
-    # print("Correlations: ")
-    # print("Cost: ", f_kd_cost, " (kendall's tau) ; ", f_sr_cost, " (spearman's r)")
-    # print("Quality: ", f_kd_quality, " (kendall's tau) ; ", f_sr_quality, " (spearman's r)")
+    f_sr_cost = fisher_mean(spearmanr_costs_rhos)
+    f_sr_quality = fisher_mean(spearmanr_qualities_rhos)
+    print("Correlations (Fisher's transform on Spearman's R): ")
+    print("Cost: ", f_sr_cost, " (spearman's r)")
+    print("Quality: ", f_sr_quality, " (spearman's r)")
 
     if args.draw or args.only_draw:
         fig, axes = plt.subplots(2,2)
