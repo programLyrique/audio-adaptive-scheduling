@@ -27,6 +27,9 @@ use audio_adaptive::audiograph::*;
 use audio_adaptive::audiograph_parser::*;
 use audio_adaptive::sndfile;
 
+use rand::prelude::*;
+use rand::distributions::Uniform;
+
 const CHANNELS: i32 = 1;
 const SAMPLE_RATE: u32 = 44_100;
 const NB_CYCLES : u32 = 12000;
@@ -163,6 +166,10 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
     let mut samplerate = SAMPLE_RATE;
     let mut nb_cycles = 0;
 
+    // Used if there is not input file to have non-zero sources
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1.,1.);
+
     let mut advance : Box<dyn FnMut(&mut [f32]) -> u32> = if let Some(audio_input_name) = audio_input {
         let mut input_file = sndfile::SndFile::open(audio_input_name)?;
         nb_channels = input_file.nb_channels();
@@ -170,7 +177,11 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
         audio_graph.set_nominal_samplerate(samplerate);
         Box::new(move |buf| {input_file.read_float(buf) as u32})
     } else {
-        Box::new(|_buf| { nb_cycles += 1; cycles - nb_cycles })
+        let n = (nb_frames * nb_channels) as usize;
+        Box::new(move |buf| {
+            buf.copy_from_slice(&rng.sample_iter(&unity_interval).take(n).collect::<Vec<f32>>());
+            nb_cycles += 1; cycles - nb_cycles
+        })
     };
 
     let buffer_size = nb_frames * nb_channels;
@@ -182,10 +193,11 @@ fn bounce_run<'a>(mut audio_graph: AudioGraph, graph_name: String, audio_input: 
     while advance(buf_in[0].buffer_mut()) != 0  {
         let start = PreciseTime::now();
         audio_graph.process(&buf_in, &mut buf_out);
+        let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
+
         output_file.write_float(buf_out[0].buffer());
 
         //Reporting
-        let execution_time = start.to(PreciseTime::now()).num_microseconds().unwrap();
         if monitor {
             let seria = format!("{}\n", execution_time);
             f.as_mut().unwrap().write_all(seria.as_bytes()).unwrap();
