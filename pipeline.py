@@ -26,6 +26,7 @@ from operator import itemgetter
 
 from scipy import stats
 import bisect
+from matplotlib2tikz import save as tikz_save
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
     epilog="Please indicate in a pipeline.json file where the process thqt executes graphs is located.")
@@ -38,6 +39,7 @@ parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
 parser.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
 parser.add_argument("--no-error", help="Continue in spite of errors", action="store_true")
 parser.add_argument("--dir", help="Directory where to process")
+parser.add_argument("--tikz", help="Save graphs in tikz format", action="store_true")
 
 args = parser.parse_args()
 
@@ -361,7 +363,7 @@ def fisher_mean(r):
     """Use Fisher's transform to compute an overall correlation"""
     return np.tanh(np.mean(np.arctanh(r)))
 
-def plot(qualities_mes, costs_mes, qualities_th, costs_th):
+def plot(name, qualities_mes, costs_mes, qualities_th, costs_th):
     fig, axes = plt.subplots(2,1)
 
     ax1= axes[0]
@@ -412,6 +414,8 @@ def plot(qualities_mes, costs_mes, qualities_th, costs_th):
 
     fig.tight_layout()
     fig.legend()
+    if args.tikz:
+        tikz_save(name+".tex")
     plt.show()
     #print("limits are: x1=[", ax1.get_xlim(), "], x2=[", ax2.get_xlim(), "]")
 
@@ -434,7 +438,7 @@ if args.graph:
                 q_mes, c_mes = load_csv(basename + "-exec-report.csv")
             q_th, c_th = load_csv(basename + "-theo.csv")
             # Display in a graph
-            plot(q_mes, c_mes, q_th, c_th)
+            plot(basename, q_mes, c_mes, q_th, c_th)
         os.chdir("..")
 elif args.nodes:
     dirname= os.getcwd()
@@ -445,6 +449,7 @@ elif args.nodes:
     except:
         pass
     os.chdir(dirname)
+    basename,_ = os.path.splitext(os.path.basename(dirname))
     kendalltau_costs_rhos = []
     kendalltau_qualities_rhos = []
     spearmanr_costs_rhos = []
@@ -460,7 +465,7 @@ elif args.nodes:
             kendalltau_qualities_rhos.append(kendaltau.quality[0])
             spearmanr_costs_rhos.append(spearmanr.costs[0])
             spearmanr_qualities_rhos.append(spearmanr.quality[0])
-        result_all_graphs_to_csv(dirname + "-correlations.csv", results)
+        result_all_graphs_to_csv(basename + "-correlations.csv", results)
     else:
         kendalltau_costs_rhos,kendalltau_qualities_rhos,spearmanr_costs_rhos,spearmanr_qualities_rhos=load_correlations(dirname + "-correlations.csv")
 
@@ -496,6 +501,9 @@ elif args.nodes:
         axes[1][1].hist(spearmanr_qualities_rhos, bins=20, label="Qualities (Spearman's r)", range=[-1,1])
 
         fig.legend()
+
+        if args.tikz:
+            tikz_save(basename+".tex", figure=fig)
 
         plt.show()
 
