@@ -164,8 +164,8 @@ pub struct AudioGraph {
 
 impl AudioGraph {
     pub fn new(frames_per_buffer : u32, channels : u32, samplerate: u32) -> AudioGraph {
-        let input_node_infos = audiograph_parser::Node {class_name: "source".to_string(), nb_outlets:1, .. Default::default()};
-        let output_node_infos = audiograph_parser::Node {class_name: "sink".to_string(), nb_inlets:1, .. Default::default()};
+        let input_node_infos = audiograph_parser::Node {class_name: "real_source".to_string(), nb_outlets:1, .. Default::default()};
+        let output_node_infos = audiograph_parser::Node {class_name: "real_sink".to_string(), nb_inlets:1, .. Default::default()};
         let mut graph = Graph::new();
         let input_node = DspNode::from_parts(input_node_infos, Box::new( Source {nb_channels:channels as usize, frames_per_buffer}));
         let output_node = DspNode::from_parts(output_node_infos, Box::new( Sink {nb_channels:channels as usize, frames_per_buffer }));
@@ -338,13 +338,15 @@ impl AudioGraph {
 
     /// Adjust buffer sizes and samplerates for nodes between two resamplers
     fn buffer_size_resamplers(&mut self) {
-        let sources = self.graph.externals(Direction::Incoming).collect::<Vec<_>>();
+        /*let sources = self.graph.externals(Direction::Incoming).collect::<Vec<_>>();
         let mut dfs = Dfs::empty(&self.graph);
 
         for source in sources.iter() {
-            dfs.move_to(*source);//Change root for dfs but don't erase the visited map!
-            while let Some(node) = dfs.next(&self.graph) {
-                let class_name = self.graph[node].node_infos.class_name.as_str().to_string();// :( to_string because of immutable lifetime clashing further
+        dfs.move_to(*source);//Change root for dfs but don't erase the visited map!
+        while let Some(node) = dfs.next(&self.graph) {*/
+        assert_eq!(self.schedule.len(), self.graph.node_count());
+        for  &node in self.schedule.iter() {
+            let class_name = self.graph[node].node_infos.class_name.clone();
 
                 let ratio : f64 = self.graph[node].node_infos.more.get("ratio").map_or(1.0, |v| v.parse().unwrap());
                 //Get min incoming buffer size
@@ -352,27 +354,37 @@ impl AudioGraph {
                 //Get min incoming samplerate
                 let samplerate = self.inputs(node).map(|edge| edge.weight().samplerate).min().unwrap_or(self.nominal_samplerate);
 
+
                 let (new_buf_size, new_samplerate) = if class_name == "resampler" {
                     /*
-                        Some incoming edges may have not their buffer size downsampled yet (but at least one has it thanks to the dfs ordering)
-                        Some incoming edges could have not had their buffer size with the normal sample size yet if an incoming branch was downsampled (but at least one has it thanks to the dfs ordering).
-                        But actually this case does not happen, as if the path is downsampled, then thanks to dfs ordering, all the subsequent edges including the incoming one of the current node, must have been explored.
-                        If it had happened, we would have taken max in the case of ratio < 1.0
+                    Some incoming edges may have not their buffer size downsampled yet (but at least one has it thanks to the dfs ordering)
+                    Some incoming edges could have not had their buffer size with the normal sample size yet if an incoming branch was downsampled (but at least one has it thanks to the dfs ordering).
+                    But actually this case does not happen, as if the path is downsampled, then thanks to dfs ordering, all the subsequent edges including the incoming one of the current node, must have been explored.
+                    If it had happened, we would have taken max in the case of ratio < 1.0
                     */
                     ((buf_size as f64 * ratio) as usize, (samplerate as f64 * ratio) as u32)
                 }
                 else {//We are not after a resampler so we propagate the min buffer size of the previous edges.
                     (buf_size, samplerate)
                 };
+
                 //println!("Buffer size={}; samplerate={}", new_buf_size, new_samplerate);
                 //Modify all outcoming buffer sizes
                 let mut output_edges = self.outputs_mut(node);
                 while let Some(edge) = output_edges.next_edge(&self.graph) {
+                    /*let (_,dst) = self.graph.edge_endpoints(edge).unwrap();
+                    if self.graph[dst].node_infos.class_name == "real_sink" {
+                        println!("{}:{} -> {}:real_sink: ratio={}; samplerate={}; new_samplerate={}; buf_size={}; new_buf_size={}", self.graph[node].node_infos.id, class_name,
+                        self.graph[dst].node_infos.class_name,
+                        ratio, samplerate, new_samplerate, buf_size, new_buf_size);
+                    }*/
                     self.graph.edge_weight_mut(edge).unwrap().resize(new_buf_size);
                     self.graph.edge_weight_mut(edge).unwrap().samplerate = new_samplerate;
                 }
             }
-        }
+
+        // Check sink
+        self.inputs(self.output_node_index).for_each(|ref edge| assert_eq!(edge.weight().samplerate, self.nominal_samplerate));
     }
 
     /// Reset all buffer sizes to the default
@@ -387,27 +399,28 @@ impl AudioGraph {
     fn validate_buffer_sizes(&self) -> bool {
         self.graph.node_indices().all(|node| {
             let mut input_edges = self.graph.edges_directed(node, Direction::Incoming);
-            let first_edge = input_edges.next().map(|e| e.weight().buffer().len());
-            let res = if let Some(size_edge) = first_edge {
-                input_edges.all(|e| e.weight().buffer().len() == size_edge)
+            let first = input_edges.next().map(|e| (e.weight().buffer().len(), e.weight().samplerate));
+            let res = if let Some((size_edge, samplerate)) = first {
+                input_edges.all(|e| e.weight().buffer().len() == size_edge && e.weight().samplerate == samplerate)
             } else {true};
             res && {
                 let mut output_edges = self.graph.edges_directed(node, Direction::Outgoing);
-                let first_edge = output_edges.next().map(|e| e.weight().buffer().len());
-                if let Some(size_edge) = first_edge {
-                output_edges.all(|e| e.weight().buffer().len() == size_edge)
+                let first = output_edges.next().map(|e| (e.weight().buffer().len(), e.weight().samplerate));
+                if let Some((size_edge, samplerate)) = first {
+                output_edges.all(|e| e.weight().buffer().len() == size_edge && e.weight().samplerate == samplerate)
                 } else {true}
             }
         })
     }
 
-    /// Autoconnect ports without edges to sources and sinks
-    pub fn autoconnect(&mut self) {
+    /// Autoconnect ports without edges to sources and sinks. If only externals, only autoconect virtual sources and sinks(externals)
+    pub fn autoconnect(&mut self, only_externals: bool) {
         //automatically connect to adc and dac nodes which have inlets and outlets without node on the other side.
         let mut io_edges = Vec::new();
         for node_index in self.graph.node_indices() {
             let node = self.graph.node_weight(node_index).unwrap();
-            if node_index != self.input_node_index && node_index != self.output_node_index {
+            let permitted_node = if only_externals {  node.node_infos.class_name == "source" || node.node_infos.class_name == "sink" } else {true};
+            if permitted_node && node_index != self.input_node_index && node_index != self.output_node_index {
                 // Theoretical I/O
                 let nb_in_t = node.node_processor.nb_inputs() as u32;
                 let nb_out_t = node.node_processor.nb_outputs() as u32;
@@ -424,7 +437,7 @@ impl AudioGraph {
                     //Connect them to audio source
                     for port in 1..(nb_in_t+1) {
                         if !input_ports.contains(&port) {//It's a non-connected port
-                            println!("Autoconnect edge from source to {} on port {}", node, port);
+                            println!("Autoconnect edge from source to {}:{} on port {}", node.node_infos.id, node, port);
                             io_edges.push((self.input_node_index, 1, node_index, port));
                         }
                     }
@@ -436,7 +449,7 @@ impl AudioGraph {
                     //Connect them to audio sink
                     for port in 1..(nb_out_t+1) {
                         if !output_ports.contains(&port) {//It's a non-connected port
-                            println!("Autoconnect edge to sink from {} on port {}", node, port);
+                            println!("Autoconnect edge to sink from {}:{} on port {}", node.node_infos.id, node, port);
                             io_edges.push((node_index, port, self.output_node_index, 1));
                         }
                     }
@@ -455,7 +468,7 @@ impl AudioGraph {
         print!("The schedule is: ", );
         for node_index in schedule.iter() {
             let node = self.graph.node_weight(*node_index).unwrap();
-            print!("{} {} ", node, if node.node_infos.class_name == "sink" {""} else {"->"});
+            print!("{} {} ", node, if node.node_infos.class_name == "real_sink" {""} else {"->"});
         }
         println!("");
     }
@@ -467,7 +480,7 @@ impl AudioGraph {
             let nb_outputs = self.nb_outputs(node) as usize;
             let max_inputs = std::cmp::max(nb_inputs, self.input_edges.len());
             let max_outputs = std::cmp::max(nb_outputs, self.output_edges.len());
-            // Several edges entering the same port. SHould be rare
+            // Several edges entering the same port. Should be rare
             // (kind of an error because we don't do automatic mixing in that case actually). Only happens
             // when there are several virtual sinks (to the real sink node).
             if max_inputs > self.input_edges.len() {
@@ -483,9 +496,9 @@ impl AudioGraph {
     pub fn update_schedule(&mut self) -> Result<(), AudioGraphError> {
         self.update_temp_buffers();
         self.reset_buffer_sizes();
-        self.buffer_size_resamplers();
-        self.validate_buffer_sizes();
         self.schedule = toposort(&self.graph, None)?;//If Cycle, returns an AudioGraphError::Cycle
+        self.buffer_size_resamplers();//Requires the topological sort
+        assert!(self.validate_buffer_sizes());
 
         self.active_component();
 
@@ -530,7 +543,6 @@ impl AudioEffect for AudioGraph {
             self.input_edges[0].buffer_mut().copy_from_slice(input_buffer);
             //Process
             self.graph.node_weight_mut(self.input_node_index).unwrap().node_processor.process(&self.input_edges[0..1], &mut self.output_edges[0..self.channels as usize]);
-            //Prepare outputs
             //Prepare Outputs
             //We could decrease memory usage by using a buffer pool
             let mut edges = self.outputs_mut(self.input_node_index);
@@ -562,6 +574,16 @@ impl AudioEffect for AudioGraph {
                 self.input_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
                 i += 1;
             }
+            //If there are ports which are not connected, we still have to adapt their size and samplerate.
+            // If i= 0, all non connected ports
+            let buf_size = if i > 0 {self.input_edges[i-1].buffer().len()} else {self.frames_per_buffer as usize};
+            let samplerate = if i > 0 {self.input_edges[i-1].samplerate} else {self.nominal_samplerate};
+            for j in i..nb_inputs {
+                self.input_edges[j].resize(buf_size);
+                self.input_edges[j].samplerate = samplerate;
+            }
+
+
             let mut outputs = self.outputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = outputs.next_edge(&self.graph) {
@@ -569,9 +591,17 @@ impl AudioEffect for AudioGraph {
                 self.output_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
                 i += 1;
             }
+            //For the remaining edges, which are actually
+            let buf_size = if i > 0 {self.output_edges[i-1].buffer().len()} else {self.frames_per_buffer as usize};
+            let samplerate = if i > 0 {self.output_edges[i-1].samplerate} else {self.nominal_samplerate};
+            for j in i..nb_outputs {
+                self.output_edges[i].resize(buf_size);
+                self.output_edges[i].samplerate = samplerate;
+            }
 
             //Prepare inputs
             // Or just use &[&DspEdge]??
+            //TODO: not fill sequentially but fill using port numbers!! (not equivalent if there are non connected ports)
             let mut edges = self.inputs_mut(*node);
             let mut i = 0;
             while let Some(edge) = edges.next_edge(&self.graph) {
@@ -602,10 +632,13 @@ impl AudioEffect for AudioGraph {
         //Quite inefficient, with allocating. Rather use a fixed vec with max number of inputs and outputs and a buffer pool
         // Or just use &[&DspEdge]??
         let mut edges = self.inputs_mut(self.output_node_index);
+        debug_assert_eq!(self.graph.node_weight(self.output_node_index).unwrap().node_infos.class_name.as_str(), "real_sink");
         let mut i = 0;
         while let Some(edge) = edges.next_edge(&self.graph) {
             self.input_edges[i].resize(self.graph.edge_weight(edge).unwrap().buffer().len());
             self.input_edges[i].samplerate = self.graph.edge_weight(edge).unwrap().samplerate;
+            //println!("Input edge of sink: {}", i);
+            debug_assert_eq!(self.input_edges[i].samplerate , self.nominal_samplerate);
             debug_assert_eq!(self.graph.edge_weight(edge).unwrap().buffer().len(), self.input_edges[i].buffer().len());
             self.input_edges[i].buffer_mut().copy_from_slice(self.graph.edge_weight(edge).unwrap().buffer());
             i += 1;
@@ -756,8 +789,12 @@ impl AudioEffect for InputsOutputsAdaptor {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
+        //println!("{}", self);
         //Actually, not a problem if it's not the case. The last inputs/outputs will just be the same number
         //debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
+        debug_assert_eq!(inputs[0].samplerate, outputs[0].samplerate);
+        debug_assert!(inputs.iter().all(|ref x| x.samplerate == inputs[0].samplerate));
+        debug_assert!(outputs.iter().all(|ref x| x.samplerate == outputs[0].samplerate));
 
         if self.nb_outputs > self.nb_inputs {
             let iter = outputs.chunks_exact_mut(self.stride);
@@ -765,6 +802,7 @@ impl AudioEffect for InputsOutputsAdaptor {
                 // Copy the last input in the remaining outputs
                 let index = std::cmp::min(i, inputs.len() - 1);
                 for output in group.iter_mut() {
+                    debug_assert_eq!(output.buffer().len(), inputs[index].buffer().len());
                     output.buffer_mut().copy_from_slice(inputs[index].buffer());
                 }
             }
@@ -775,6 +813,7 @@ impl AudioEffect for InputsOutputsAdaptor {
                 //To handle the last chunk which will be mixed in the last output with the previous chunk
                 let index = std::cmp::min(i, outputs.len() - 1);
                 for input in group {
+                    debug_assert_eq!(outputs[index].buffer().len(), input.buffer().len());
                     mixer(outputs[index].buffer_mut(), input.buffer());
                 }
             }
@@ -805,6 +844,9 @@ impl AudioEffect for Sink {
 
         let sink_buffer = outputs[0].buffer_mut();
         assert_eq!(sink_buffer.len(), self.nb_channels * self.frames_per_buffer as usize);
+        for input in inputs.iter() {
+            debug_assert_eq!(input.buffer().len(), self.frames_per_buffer as usize);
+        }
 
         //We have to interlace the ouput buffers (one per channel) into the sink buffer (output buffer of the audio API)
         for (i,chunk) in sink_buffer.chunks_mut(self.nb_channels).enumerate() {
@@ -888,7 +930,6 @@ impl fmt::Display for  Resampler {
 
 
 impl AudioEffect for Resampler {
-    //TODO: We should propagate the samplerate argument for the following nodes in the schedule.
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());

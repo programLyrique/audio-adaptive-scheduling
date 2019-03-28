@@ -99,8 +99,6 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         edges.into_iter()
     }
 
-    //let to_print = audiograph.clone().into_inner().flat_map()
-
     let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().flat_map(|r| r.into_inner())
             .filter(|ref r| r.as_rule() != Rule::deadline)
             //.inspect(|x| println!("Statement: {:?}.", x))
@@ -125,7 +123,7 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         audiograph.add_connection(src_node, edge.src_port, dst_node, edge.dst_port);
     }
 
-    audiograph.autoconnect();
+    audiograph.autoconnect(true);
 
     Ok(audiograph)
 }
