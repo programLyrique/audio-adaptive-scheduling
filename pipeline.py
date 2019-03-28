@@ -29,14 +29,17 @@ import bisect
 from matplotlib2tikz import save as tikz_save
 
 parser = argparse.ArgumentParser(description="Generate graphs, execute them, and then evaluate their quality", \
-    epilog="Please indicate in a pipeline.json file where the process thqt executes graphs is located.")
+    epilog="Please indicate in a pipeline.json file where the process that executes graphs is located.")
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("-g", "--graph", help="Specify non-degraded graphs to explore the quality of.", action="append")
 group.add_argument("-n", "--nodes", help="Explore all graphs of size nodes", type=int)
 parser.add_argument("-a", "--all", help="Explore all sizes up to the one precised by --nodes", action="store_true")
 parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
 parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
-parser.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
+parser.add_argument("--no-generation", help="Only execute the graphs previously generated. Expects a precise naming of the graphs", action="store_true")
+gen_option = parser.add_mutually_exclusive_group()
+gen_option.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
+gen_option.add_argument("-z", "--from-graphs", help="Use a set of already generated graphs", action="store_true")
 parser.add_argument("--no-error", help="Continue in spite of errors", action="store_true")
 parser.add_argument("--dir", help="Directory where to process")
 parser.add_argument("--tikz", help="Save graphs in tikz format", action="store_true")
@@ -143,15 +146,23 @@ class GraphResults:
     def __repr__(self):
         return "{}: {}, {}".format(self.name, self.costs, self.quality)
 
-def process_all_graphs(nb_nodes, dirname, random=False):
+def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
     """Process on all weakly connected Dags up to nb_nodes"""
-    tqdm.write("Enumerating weakily DAGs up to " + str(nb_nodes) + " nodes with result in " + dirname)
-    #./main.native -dewx -n 5 --node-file ../nodes.ag
-    command = [graph_enum]
-    if random:
-        command.extend(["-l", "--edge-prob", "0.3"])
-    command.extend(["-dewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])
-    subprocess.run(command, check=True)
+    if not args.no_generation:
+        tqdm.write("Enumerating weakily DAGs", end=" ")
+        if from_graphs:
+            tqdm.write("with at least", end=" ")
+        else:
+            tqdm.write("up to", end=" ")
+        tqdm.write(str(nb_nodes) + " nodes with result in " + dirname)
+        #./main.native -dewx -n 5 --node-file ../nodes.ag
+        command = [graph_enum]
+        if random:
+            command.extend(["-l", "--edge-prob", "0.3"])
+        elif from_graphs:
+            command.extend(["-z", "--connect-subpatches"])
+        command.extend(["-ewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])
+        subprocess.run(command, check=True)
 
     nb_errors=0
     results={}
@@ -455,7 +466,7 @@ elif args.nodes:
     spearmanr_costs_rhos = []
     spearmanr_qualities_rhos = []
     if not args.only_draw:
-        results = process_all_graphs(args.nodes, dirname, args.random)
+        results = process_all_graphs(args.nodes, dirname, args.random, args.from_graphs)
         for  result in tqdm(results.values()):
             kendaltau = result["KendallTau"]
             spearmanr = result["SpearmanR"]
