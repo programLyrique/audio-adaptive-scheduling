@@ -559,7 +559,7 @@ impl AudioEffect for AudioGraph {
 
         //We assume that sink is the last node in the schedule and execute it separately
         for node in self.schedule[0..self.schedule.len() - 1].iter() {
-            //println!("Executing {}", self.graph.node_weight(*node).unwrap().node_processor);
+            //println!("Executing {}:{}", self.graph.node_weight(*node).unwrap().node_infos.id, self.graph.node_weight(*node).unwrap().node_processor);
 
             let (nb_inputs, nb_outputs)  = {
                 let n = &self.graph.node_weight(*node).unwrap().node_processor;
@@ -595,8 +595,8 @@ impl AudioEffect for AudioGraph {
             let buf_size = if i > 0 {self.output_edges[i-1].buffer().len()} else {self.frames_per_buffer as usize};
             let samplerate = if i > 0 {self.output_edges[i-1].samplerate} else {self.nominal_samplerate};
             for j in i..nb_outputs {
-                self.output_edges[i].resize(buf_size);
-                self.output_edges[i].samplerate = samplerate;
+                self.output_edges[j].resize(buf_size);
+                self.output_edges[j].samplerate = samplerate;
             }
 
             //Prepare inputs
@@ -789,7 +789,7 @@ impl AudioEffect for InputsOutputsAdaptor {
     fn process(&mut self, inputs: &[DspEdge], outputs: &mut[DspEdge]) {
         debug_assert_eq!(inputs.len(), self.nb_inputs());
         debug_assert_eq!(outputs.len(), self.nb_outputs());
-        //println!("{}", self);
+        //println!("{}" self);
         //Actually, not a problem if it's not the case. The last inputs/outputs will just be the same number
         //debug_assert!(self.nb_inputs % self.nb_outputs == 0 || self.nb_outputs % self.nb_inputs == 0 );
         debug_assert_eq!(inputs[0].samplerate, outputs[0].samplerate);
@@ -801,7 +801,9 @@ impl AudioEffect for InputsOutputsAdaptor {
             for (i,group) in iter.enumerate() {
                 // Copy the last input in the remaining outputs
                 let index = std::cmp::min(i, inputs.len() - 1);
+                let mut j = 1;
                 for output in group.iter_mut() {
+                    j = j + 1;
                     debug_assert_eq!(output.buffer().len(), inputs[index].buffer().len());
                     output.buffer_mut().copy_from_slice(inputs[index].buffer());
                 }
