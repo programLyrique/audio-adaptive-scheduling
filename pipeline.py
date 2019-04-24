@@ -37,6 +37,7 @@ parser.add_argument("-a", "--all", help="Explore all sizes up to the one precise
 parser.add_argument("-d", "--draw", help="Draw graph of quality and cost.", action="store_true")
 parser.add_argument("--only-draw", help="Only draws graph", action="store_true")
 parser.add_argument("--no-generation", help="Only execute the graphs previously generated. Expects a precise naming of the graphs", action="store_true")
+parser.add_argument("--continue-exec", help="Continue execution where it was left.", action="store_true")
 gen_option = parser.add_mutually_exclusive_group()
 gen_option.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
 gen_option.add_argument("-z", "--from-graphs", help="Use a set of already generated graphs", action="store_true")
@@ -68,12 +69,18 @@ finally:
     print("Graph enumeration with: ", graph_enum)
     print("Using node dictionary: ", nodes_dic)
 
-def index(a, x):
-    'Locate the leftmost value exactly equal to x'
-    i = bisectbisect_left(a, x)
-    if i != len(a) and a[i] == x:
-        return i
-    raise ValueError
+def find_last_file():
+    #each execution generates a -rt.csv file
+    # Pick the most recent one
+    last = list(sorted(glob.iglob("*-rt.csv"), reverse=True, key= lambda f: os.path.getmtime(f)))[0]
+    # Check if there is also the corresponding wav file
+    basename = last.split("_")[1].rsplit("-", maxsplit=1)[0]
+    if not os.path.exists(basename+".wav"):
+        print("Impossible to continue. No wav file associated to it. ", last)
+        exit(-1)
+    else:
+        return basename
+
 
 def get_costs(csvname):
     """Get csv file with execution times and compute average execution time
@@ -91,6 +98,8 @@ def get_costs(csvname):
 def execute_graph(graph):
     tqdm.write("Executing graph " + graph)
     subprocess.run([graph_exec, "-m", "-b", "-c", "10000", graph], check=True)
+
+def get_exec_times(graph):
     # Get execution times for reports (-m option)
     basename,_ = os.path.splitext(os.path.basename(graph))
     reports = glob.glob("*"+basename + "*.csv")
@@ -148,7 +157,7 @@ class GraphResults:
 
 def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
     """Process on all weakly connected Dags up to nb_nodes"""
-    if not args.no_generation:
+    if (not args.no_generation) and (not args.continue_exec):
         tqdm.write("Enumerating weakily DAGs", end=" ")
         if from_graphs:
             tqdm.write("with at least", end=" ")
@@ -164,11 +173,18 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
         command.extend(["-ewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])
         subprocess.run(command, check=True)
 
+    last_basename=""
+    doexec=True
+    if args.continue_exec:
+        last_basename=find_last_file()
+        doexec=False
+
     nb_errors=0
     results={}
     tqdm.write("Executing graphs")
     #Group them by non-degraded graphs
-    for non_degraded_graph in tqdm(glob.iglob("*-0.ag")):
+    #TODO: rather sort them by number? (right now, lexicographic order)
+    for non_degraded_graph in tqdm(sorted(glob.iglob("*-0.ag"))):
         # Get the prefix for this graph
         prefix = non_degraded_graph.rsplit("-", maxsplit=1)[0]
         tqdm.write(prefix)
@@ -177,8 +193,13 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
             for graph in tqdm(sorted(glob.iglob(prefix+"*.ag"))):
                 basename,_ = os.path.splitext(graph)
                 result= GraphResults(basename)
-                costs = execute_graph(graph)
-                result.costs = costs
+                if not args.continue_exec or (doexec and basename != last_basename):
+                    #We need to execute the graph
+                    result.costs = execute_graph(graph)
+                elif not doexec and basename == last_basename:
+                    doexec = True
+
+                result.costs = get_exec_times(graph)
                 result_graph.append(result)
         except subprocess.CalledProcessError as err:
             if args.no_error:
@@ -208,6 +229,8 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
 
             # Meaningless to compute rank correlation on a vector of size 1
             if nb_degraded_graphs > 0:
+                #TODO: save results of analysis to be used if need to continue?
+
                 # Get audio files
                 audiofiles = glob.glob(prefix+"*.wav")
                 qualities = compare_audio_files(audiofiles)
