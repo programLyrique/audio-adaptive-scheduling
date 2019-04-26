@@ -14,74 +14,14 @@ import os.path
 from tqdm import tqdm
 import glob
 
-import lark
-from lark import Lark
+from pyparsing import *
 
-block_parser= Lark(r"""
-    block: "{" decls* "}"
+def trim(s, l, tokens):
+    print("tok:", tokens[0])
+    return [tokens[0].strip()]
 
-    pointer: "&" "mut"?
-
-    array: "[" ident ";" /[1-9]{1}[0-9]*/ "]"
-    slice: pointer "[" pointer? (ident | slice) "]"
-    generic: "<" ident ">"
-    rtype: pointer? ident generic? | array | slice
-    typedecl: ident ":" rtype
-
-    arg: rtype | typedecl
-    args: (arg ",")* arg?
-    rettype: "->" rtype
-
-    //for: "for" ident "in" _string function_block
-
-    //if: "if" "(" _ifcond ")" function_block ["else" function_block] ";"?
-
-    //index: "[" INT "]"
-    //assign: ident index? (":" rtype)? "=" expr
-    //mut: "mut"
-    //let: "let" mut? assign
-    //return: "return" (ident | value) ";"?
-    //statement: struct | match | let | return | assign | _line
-    //expr: (if | value | ident | _line)+
-
-    //function_block: "{" (statement ";" |  for | if )* statement? return? "}"
-    function_block: "{" insideblock? | (insideblock? function_block insideblock?) "}"
-    function: "pub"? "fn" ident "(" args ")" rettype? function_block
-
-    //struct_decl: "pub"? "struct" ident "{" (typedecl ",")* "}"
-    struct_decl: "pub"? "struct" ident function_block
-    //array_val: "[" (SIGNED_INT |DECIMAL) ";" INT "]"
-    //struct_elem: ident ":" (value | array_val) ["as" ident]
-    //struct: ident "{" (struct_elem ",")* "}"
-
-    //value: INT | SIGNED_INT | DECIMAL | ident | _ifcond
-
-    //match_clause: (value | "_") "=>" (function_block | _string)
-    //match: "match" "(" ident ")" "{" (match_clause ",")* "}"
-
-    impl: "impl" ident block
-
-    decls: function | struct_decl | impl
-
-    start: decls*
-
-    ident: /[a-zA-Z][a-zA-Z0-9_\.-]*/
-    
-
-    insideblock: /[^{}]+/
-    //_string: /[^{};]+/
-    //_line: /[^\n\t{};]+/
-    //ifcond: /[^\n\t(){};]+/ | "(" ifcond ")" ifcond*
-
-    %import common.INT
-    %import common.SIGNED_INT
-    %import common.DECIMAL
-    %import common.LETTER
-    %import common.DIGIT
-    %import common.WS
-    %ignore WS
-""", debug=True)
-
+insideBlock = CharsNotIn("{}").setParseAction(trim)
+block_parser = nestedExpr('{','}', content=insideBlock)
 
 def extension(path):
     return os.path.splitext(path)[1]
@@ -98,7 +38,7 @@ def convert_file(filename):
 
 def process(filename):
     rust_file = convert_file(filename)
-    parse_tree = block_parser.parse(rust_file)
+    parse_tree = block_parser.parseString("{" + rust_file + "}")
     print(parse_tree)
 
 if __name__ == "__main__":
@@ -121,9 +61,8 @@ if __name__ == "__main__":
         if ext == ".dsp":
             process(args.name)
         elif ext == ".rs":
-            with open(args.name, "r") as f:
-                parse_tree = block_parser.parse(f.read())
-                print(parse_tree)
+            parse_tree = block_parser.parseFile(args.name)
+            print(parse_tree)
         else:
             print(args.name, " is not a known format file.")
             exit(-1)
