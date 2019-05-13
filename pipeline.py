@@ -113,7 +113,6 @@ def get_exec_times(graph):
 def execute_graph(graph):
     tqdm.write("Executing graph " + graph)
     subprocess.run([graph_exec, "-m", "-b", "-c", "10000", graph], check=True)
-    return get_exec_times(graph)
 
 def compare_audio_files(audiofiles):
     audiofiles.sort()# Number 0 is always the non-degraded file
@@ -127,6 +126,7 @@ def compare_audio_files(audiofiles):
         y,sr = quality.load_file(degraded, duration=2)
         basename,_ = os.path.splitext(degraded)
         qualities[basename] = quality.compare_specto(y_nd, sr_nd, y, sr)
+
     return qualities
 
 def process_graph(graph):
@@ -147,7 +147,8 @@ def process_graph(graph):
     for graph in tqdm(glob.iglob("*.ag")):
         tqdm.write(graph)
         basename,_ = os.path.splitext(os.path.basename(graph))
-        costs[basename] = execute_graph(graph)
+        execute_graph(graph)
+        costs[basename] = get_exec_times(graph)
     # Get resulting audiofiles
     audiofiles = glob.glob("*.wav")
     qualities = compare_audio_files(audiofiles)
@@ -161,6 +162,7 @@ class GraphResults:
 
     def __repr__(self):
         return "{}: {}, {}".format(self.name, self.costs, self.quality)
+
 
 def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
     """Process on all weakly connected Dags up to nb_nodes"""
@@ -201,8 +203,8 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
                 basename,_ = os.path.splitext(graph)
                 result= GraphResults(basename)
                 if not args.continue_exec or (doexec and basename != last_basename):
-                    #We need to execute the graph
-                    result.costs = execute_graph(graph)
+                    #We need to execute the graph. Results are retrieved at get_exec_times
+                    execute_graph(graph)
                 elif not doexec and basename == last_basename:
                     doexec = True
 
@@ -219,6 +221,7 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
 
             nb_degraded_graphs = len(result_graph)
 
+            #result_dict["Name"] = prefix # Already extracted from the costs
             result_dict["NbDegradedGraphs"] = nb_degraded_graphs
             # We also want to get the following measures:
             # - are the worst/best graphs in terms of costs and quality the same in
@@ -229,15 +232,10 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
             # - DONE how many degraded graphs in average for one graph?
             # - how many resamplers have been inserted? Downsamplers? Upsamplers?
             # TODO later: try to degrade in same order as heuristics and see if it correlates with the order in quality and in cost
-            # TODO: case of a source => use a real audio file? Or generate a sin wave? Or just noise? Or don't generate sources here?
-            # Because for now, sources just output a 0 signal, so we get the same quality for each version and
-            # it does not give an useful ranking for the measured quality.
             # TODO: apply merge operation for resampler (the one that inserts a mixer and then a resampler instead of several resamplers)
 
             # Meaningless to compute rank correlation on a vector of size 1
             if nb_degraded_graphs > 0:
-                #TODO: save results of analysis to be used if need to continue?
-
                 # Get audio files
                 audiofiles = glob.glob(prefix+"*.wav")
                 qualities = compare_audio_files(audiofiles)
@@ -250,16 +248,21 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
                     #If we've not computed a quality for it, it is the non-degraded graph
                     result.quality = qualities.get(result.name, 1.0)
 
+                costs = {}#Used to save the results
                 costs_mes=[]
                 qualities_mes=[]
                 for result in result_graph:
-                    cost,_ = result.costs
+                    cost = result.costs[0]
+                    costs[result.name] = result.costs
                     costs_mes.append(cost)
                     qualities_mes.append(result.quality)
 
                 # We should get them in the same graph order as in the measured one (non-degraded first)
                 csvname = prefix.rsplit("-", maxsplit=1)[0] + "-theo.csv"
                 qualities_th, costs_th = load_csv(csvname)
+
+                # Save the measured results
+                results_to_csv(prefix + "-exec-report", qualities, costs)
 
                 # Correlations
                 kendalltau = GraphResults(prefix)
@@ -278,13 +281,15 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
                 result_dict["KendallTau"] = kendalltau
 
                 # Speed increase? How many graphs are quicker than the non-degraded one
-                increasing_costs_mes = list(sorted(result_graph, key=lambda res: res.costs))
+                increasing_costs_mes = list(sorted(result_graph, key=lambda res: res.costs[0]))
                 quicker = 0
                 while quicker < len(increasing_costs_mes):
                     if int(increasing_costs_mes[quicker].name.rsplit("-", maxsplit=1)[1]) == 0:
                         break
                     quicker = quicker + 1
                 result_dict["QuickerMes"] = quicker
+                result_dict["QuickestMes"] = (graph_number(increasing_costs_mes[0].name), increasing_costs_mes[0].costs[0])
+                result_dict["SlowestMes"] = (graph_number(increasing_costs_mes[-1].name), increasing_costs_mes[-1].costs[0])
 
             results[prefix] = result_dict
 
@@ -325,7 +330,7 @@ def results_to_csv(graphname, qualities, costs):
             writer.writerow(result)
 
 def result_all_graphs_to_csv(name, results):
-    fieldnames = ["Name", "NbDegradedGraphs", "CostKT", "CostPKT", "QualityKT", "QualityPKT", "CostSR", "CostPSR", "QualitySR", "QualityPSR"]
+    fieldnames = ["Name", "NbDegradedGraphs", "CostKT", "CostPKT", "QualityKT", "QualityPKT", "CostSR", "CostPSR", "QualitySR", "QualityPSR", "QuickerMes", "QuickestMesName", "QuickestMes", "SlowestMesName", "SlowestMes"]
     with open(name, "w", newline='') as csvfile:
         result={}
         writer = csv.DictWriter(csvfile, fieldnames, delimiter='\t')
@@ -350,6 +355,15 @@ def result_all_graphs_to_csv(name, results):
 
             result["QualitySR"] = spearmanr.quality[0]
             result["QualityPSR"] = spearmanr.quality[1]
+
+            result["QuickerMes"] = res["QuickerMes"]
+
+            result["QuickestMesName"] = res["QuickestMes"][0]
+            result["QuickestMes"] = res["QuickestMes"][1]
+
+            result["SlowestMesName"] = res["SlowestMes"][0]
+            result["SlowestMes"] = res["SlowestMes"][1]
+
             writer.writerow(result)
 
 def load_correlations(filename):
