@@ -95,10 +95,6 @@ def get_costs(csvname):
             nb_rows += 1
         return total / float(nb_rows), total
 
-def execute_graph(graph):
-    tqdm.write("Executing graph " + graph)
-    subprocess.run([graph_exec, "-m", "-b", "-c", "10000", graph], check=True)
-
 def get_exec_times(graph):
     # Get execution times for reports (-m option)
     basename,_ = os.path.splitext(os.path.basename(graph))
@@ -107,6 +103,11 @@ def get_exec_times(graph):
     csvfile = reports[0]
     tqdm.write("Retrieving monitoring info from "+ csvfile)
     return get_costs(csvfile)
+
+def execute_graph(graph):
+    tqdm.write("Executing graph " + graph)
+    subprocess.run([graph_exec, "-m", "-b", "-c", "10000", graph], check=True)
+    return get_exec_times(graph)
 
 def compare_audio_files(audiofiles):
     audiofiles.sort()# Number 0 is always the non-degraded file
@@ -289,6 +290,8 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
     print(nb_errors, " graphs were discarded due to execution errors")
     return results
 
+def graph_number(name):
+    return int(name.rsplit("-", maxsplit=1)[1])
 
 def results_to_csv(graphname, qualities, costs):
     fieldnames=["Name", "Quality", "Cost", "Total"]
@@ -298,7 +301,7 @@ def results_to_csv(graphname, qualities, costs):
         writer.writeheader()
         #Get cost original graph
         name = list(sorted(costs.keys()))[0]
-        result["Name"] = name
+        result["Name"] = graph_number(name)
         cost, total = costs[name]
         result["Quality"] = 1.0
         result["Cost"] = cost
@@ -306,6 +309,7 @@ def results_to_csv(graphname, qualities, costs):
         writer.writerow(result)
         for graph in qualities.keys():
             result={}
+            result["Name"] = graph_number(graph)
             result["Quality"] = qualities[graph]
             cost, total = costs[graph]
             result["Cost"] = cost
