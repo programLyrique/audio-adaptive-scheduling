@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from adjustText import adjust_text
 from operator import itemgetter
+import math
 
 from scipy import stats
 import bisect
@@ -89,11 +90,16 @@ def get_costs(csvname):
         csvfile.readline() # To remove first line where there are number of nodes and edges
         csvreader = csv.DictReader(csvfile, delimiter='\t')
         total=0.
+        min_cost=math.inf
+        max_cost=0
         nb_rows=0
         for row in csvreader:
-            total += float(row["Execution time"])
+            current_dur = float(row["Execution time"])
+            min_cost = min(min_cost, current_dur)
+            max_cost = max(max_cost, current_dur)
+            total += current_dur
             nb_rows += 1
-        return total / float(nb_rows), total
+        return total / float(nb_rows), total, min_cost, max_cost
 
 def get_exec_times(graph):
     # Get execution times for reports (-m option)
@@ -302,7 +308,8 @@ def results_to_csv(graphname, qualities, costs):
         #Get cost original graph
         name = list(sorted(costs.keys()))[0]
         result["Name"] = graph_number(name)
-        cost, total = costs[name]
+        cost = costs[name][0]
+        total = costs[name][1]
         result["Quality"] = 1.0
         result["Cost"] = cost
         result["Total"] = total
@@ -311,7 +318,8 @@ def results_to_csv(graphname, qualities, costs):
             result={}
             result["Name"] = graph_number(graph)
             result["Quality"] = qualities[graph]
-            cost, total = costs[graph]
+            cost = costs[graph][0]
+            total = costs[graph][1]
             result["Cost"] = cost
             result["Total"] = total
             writer.writerow(result)
@@ -381,12 +389,13 @@ def q_c_dict_to_list(qualities, costs):
     # graph 0
     q.append(1.)
     name = list(sorted(costs.keys()))[0]
-    cost, total = costs[name]
+    cost = costs[name][0]
+    total = costs[name][1]
     c_cycle.append(cost)
     # Then, from graph 1
     for k in sorted(qualities.keys()):
         q.append(qualities[k])
-        cycle, _ = costs[k]
+        cycle = costs[k][0]
         c_cycle.append(cycle)
         #name = k.split("-")[-1]
 
