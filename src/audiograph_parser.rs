@@ -110,8 +110,13 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
 
     let mut audiograph = AudioGraph::new(buffer_size as u32, nb_channels as u32, samplerate);
 
+    let mut has_sink = false;
+
     for node_infos in nodes.into_iter() {
         let id = node_infos.id.clone();
+        if node_infos.class_name == "source" || node_infos.class_name == "sink" {
+            has_sink = true
+        }
         let node = DspNode::new(node_infos, nb_channels);
         let node_index = audiograph.add_node(node);
         node_indexes.insert(id, node_index);
@@ -123,7 +128,8 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
         audiograph.add_connection(src_node, edge.src_port, dst_node, edge.dst_port);
     }
 
-    audiograph.autoconnect(true);
+    //If the audio graph has not virtual sink, we autoconnect with whatever non connected ports it has, by setting only at false.
+    audiograph.autoconnect(has_sink);
 
     Ok(audiograph)
 }
