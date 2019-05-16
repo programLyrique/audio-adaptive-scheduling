@@ -176,7 +176,7 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
         #./main.native -dewx -n 5 --node-file ../nodes.ag
         command = [graph_enum]
         if random:
-            command.extend(["-l", "--edge-prob", "0.3"])
+            command.extend(["-l", "--edge-prob", "0.3", "--nb-samples", "100"])
         elif from_graphs:
             command.extend(["-z", "--connect-subpatches"])
         command.extend(["-ewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])

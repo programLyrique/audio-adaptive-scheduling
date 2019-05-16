@@ -17,14 +17,20 @@ import glob
 from pyparsing import *
 
 def trim(s, l, tokens):
-    print("tok:", tokens[0])
+    #print("tok:", tokens[0])
     return [tokens[0].strip()]
 
-insideBlock = CharsNotIn("{}").setParseAction(trim)
+#insideBlock = CharsNotIn("{}").setParseAction(trim)
+insideBlock = CharsNotIn("{}")
 block_parser = nestedExpr('{','}', content=insideBlock)
+
+
 
 def extension(path):
     return os.path.splitext(path)[1]
+
+def without_ext(path):
+    return os.path.splitext(os.path.basename(path))[0]
 
 def show_tokens(s):
     tokens = block_parser.lex(s)
@@ -32,11 +38,26 @@ def show_tokens(s):
         print(tok.type, "(", tok, ")")
 
 # Convert faust files to rust
-def convert_file(filename):
-    proc = subprocess.run(["faust", "-lang", "rust", filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+def convert_file(filename, struct_name):
+    proc = subprocess.run(["faust", "-lang", "rust", filename, "-cn", struct_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     return proc.stdout#This is the rust content
 
+def to_audioeffect(parse_tree):
+    """Generate the audio effect"""
+    #Filter out what we don't need
+    i = 0
+    nb_uplevel_tok = len(parse_tree)
+    tok = parse_tree
+    while i < nb_uplevel_tok:
+        if "fn metadata" in tok[i] or "fn buildUserInterface" in tok[i] or "fn instanceResetUserInterface" in tok[i]:
+            del tok[i]
+            del tok[i+1]
+            i = i + 2
+        elif isinstance(tok[i], list):
+            pass
+
 def process(filename):
+    struct_name = without_ext(filename)
     rust_file = convert_file(filename)
     parse_tree = block_parser.parseString("{" + rust_file + "}")
     print(parse_tree)
@@ -70,6 +91,5 @@ if __name__ == "__main__":
         print(args.name, " does not exist")
         exit(-1)
 
-    # Extract the relevant rust code (parsing with lark)
 
     # Generate the audio effect
