@@ -42,6 +42,7 @@ parser.add_argument("--continue-exec", help="Continue execution where it was lef
 gen_option = parser.add_mutually_exclusive_group()
 gen_option.add_argument("-r", "--random", help="Randomly generates the graphs", action="store_true")
 gen_option.add_argument("-z", "--from-graphs", help="Use a set of already generated graphs", action="store_true")
+parser.add_argument("--merge-resamplers", help="Merge resampler optmization", action="store_true")
 parser.add_argument("--no-error", help="Continue in spite of errors", action="store_true")
 parser.add_argument("--dir", help="Directory where to process")
 parser.add_argument("--tikz", help="Save graphs in tikz format", action="store_true")
@@ -129,7 +130,7 @@ def compare_audio_files(audiofiles):
 
     return qualities
 
-def process_graph(graph):
+def process_graph(graph, merge_resamplers=False):
     tqdm.write("Processing " + graph, end=" ")
     basename,ext = os.path.splitext(graph)
     dirname = basename + "-degraded"
@@ -141,7 +142,10 @@ def process_graph(graph):
     os.chdir(dirname)
     tqdm.write("Enumerating degraded versions")
     # Export both as .ag and as .dot
-    subprocess.run([graph_enum, "-w", "-x", "-edr", graph, "--node-file="+nodes_dic], check=True)
+    command=[graph_enum, "-w", "-x", "-edr", "--stats", graph, "--node-file="+nodes_dic]
+    if merge_resamplers:
+        command.append(("--merge-resamplers"))
+    subprocess.run(command, check=True)
     costs={}
     tqdm.write("Executing graphs")
     for graph in tqdm(glob.iglob("*.ag")):
@@ -164,7 +168,7 @@ class GraphResults:
         return "{}: {}, {}".format(self.name, self.costs, self.quality)
 
 
-def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
+def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False, merge_resamplers=False):
     """Process on all weakly connected Dags up to nb_nodes"""
     if (not args.no_generation) and (not args.continue_exec):
         tqdm.write("Enumerating weakily DAGs", end=" ")
@@ -179,6 +183,8 @@ def process_all_graphs(nb_nodes, dirname, random=False, from_graphs=False):
             command.extend(["-l", "--edge-prob", "0.3", "--nb-samples", "100"])
         elif from_graphs:
             command.extend(["-z", "--connect-subpatches"])
+        if merge_resamplers:
+            command.append("--merge-resamplers")
         command.extend(["-ewxr",  "-n", str(nb_nodes), "--node-file="+nodes_dic])
         subprocess.run(command, check=True)
 
@@ -487,7 +493,7 @@ if args.graph:
         basename,_ = os.path.splitext(os.path.basename(graph))# We stay in the directory created in process_graph
         if not args.only_draw:
             absgraph = os.path.abspath(graph)
-            qualities,costs = process_graph(absgraph)
+            qualities,costs = process_graph(absgraph, args.merge_resamplers)
             tqdm.write("Qualities are " + str(qualities))
             tqdm.write("Costs are " + str(costs))
             results_to_csv(basename + "-exec-report", qualities, costs)
@@ -516,7 +522,7 @@ elif args.nodes:
     spearmanr_costs_rhos = []
     spearmanr_qualities_rhos = []
     if not args.only_draw:
-        results = process_all_graphs(args.nodes, dirname, args.random, args.from_graphs)
+        results = process_all_graphs(args.nodes, dirname, args.random, args.from_graphs, args.merge_resamplers)
         for  result in tqdm(results.values()):
             kendaltau = result["KendallTau"]
             spearmanr = result["SpearmanR"]
