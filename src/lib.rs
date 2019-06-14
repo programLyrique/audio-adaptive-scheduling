@@ -15,15 +15,16 @@ extern crate time;
 
 extern crate portaudio;
 
+pub mod ringbuffer;
 pub mod samplerate;
 pub mod sndfile;
-pub mod ringbuffer;
 //pub mod reverb;
+pub mod audiograph;
+pub mod audiograph_parser;
 pub mod effect;
 pub mod experiments;
+pub mod faust_effect;
 pub mod stats;
-pub mod audiograph_parser;
-pub mod audiograph;
 
 extern crate pest;
 #[macro_use]

@@ -5,16 +5,16 @@
 //!
 //! This ringbuffer is resizeable.
 
-use std::fmt;
 use std::cmp;
+use std::fmt;
 
 // TODO: maybe use Cell or RefCell for read and write pos in order not to haveto use &mut self?
 
 pub struct RingBuffer<T> {
-    buf : Vec<T>,
-    size : usize,
-    write_pos : usize,
-    read_pos : usize,
+    buf: Vec<T>,
+    size: usize,
+    write_pos: usize,
+    read_pos: usize,
 }
 
 #[derive(Debug)]
@@ -34,15 +34,14 @@ impl fmt::Display for RingBufferError {
 
 pub type Result<T> = ::std::result::Result<T, RingBufferError>;
 
-impl<T : Clone + Default > RingBuffer<T> {
-
+impl<T: Clone + Default> RingBuffer<T> {
     pub fn new(size: usize) -> RingBuffer<T> {
-        let buffer = vec![T::default();size + 1];
+        let buffer = vec![T::default(); size + 1];
         RingBuffer {
-            buf : buffer,
-            size : size + 1,
-            write_pos : 0,
-            read_pos : 0,
+            buf: buffer,
+            size: size + 1,
+            write_pos: 0,
+            read_pos: 0,
         }
     }
 
@@ -59,10 +58,9 @@ impl<T : Clone + Default > RingBuffer<T> {
 
     #[inline(always)]
     pub fn slots_free(&self) -> usize {
-        if self.write_pos < self.read_pos  {
+        if self.write_pos < self.read_pos {
             self.read_pos - self.write_pos - 1
-        }
-        else {
+        } else {
             self.capacity() - self.write_pos + self.read_pos
         }
     }
@@ -79,15 +77,21 @@ impl<T : Clone + Default > RingBuffer<T> {
 
     #[inline(always)]
     pub fn count(&self) -> usize {
-        self.capacity().checked_sub(self.slots_free()).expect(&format!("Underflow: capacity {}; slots free {}!", self.capacity(), self.slots_free()))
+        self.capacity()
+            .checked_sub(self.slots_free())
+            .expect(&format!(
+                "Underflow: capacity {}; slots free {}!",
+                self.capacity(),
+                self.slots_free()
+            ))
     }
 
-    pub fn write(&mut self, data : &[T]) -> Result<usize> {
+    pub fn write(&mut self, data: &[T]) -> Result<usize> {
         if data.len() == 0 {
-            return Ok(0)
+            return Ok(0);
         }
         if self.is_full() {
-            return Err(RingBufferError::Full)
+            return Err(RingBufferError::Full);
         }
         let free_slots1 = self.slots_free();
         debug_assert!(self.slots_free() <= self.capacity());
@@ -98,20 +102,19 @@ impl<T : Clone + Default > RingBuffer<T> {
             for idx in 0..cnt {
                 buf[self.write_pos] = data[idx].clone();
                 self.write_pos = (self.write_pos + 1) % buf_len;
-            };
+            }
         }
         debug_assert!(free_slots1 >= self.slots_free());
         debug_assert!(self.slots_free() <= self.capacity());
         Ok(cnt)
     }
 
-
-    pub fn fill(&mut self, count : usize, value : T) -> Result<usize> {
+    pub fn fill(&mut self, count: usize, value: T) -> Result<usize> {
         if count == 0 {
             return Ok(0);
         }
         if self.is_full() {
-            return Err(RingBufferError::Full)
+            return Err(RingBufferError::Full);
         }
         debug_assert!(self.slots_free() <= self.capacity());
         let cnt = cmp::min(count, self.slots_free());
@@ -122,7 +125,7 @@ impl<T : Clone + Default > RingBuffer<T> {
             for _ in 0..cnt {
                 buf[self.write_pos] = value.clone();
                 self.write_pos = (self.write_pos + 1) % buf_len;
-            };
+            }
         }
         debug_assert!(self.slots_free() <= self.capacity());
         Ok(cnt)
@@ -131,8 +134,7 @@ impl<T : Clone + Default > RingBuffer<T> {
     pub fn skip_pending(&mut self) -> Result<usize> {
         if self.is_empty() {
             Err(RingBufferError::Empty)
-        }
-        else {
+        } else {
             let count = self.count();
             self.read_pos = self.write_pos;
             debug_assert!(self.slots_free() <= self.capacity());;
@@ -140,11 +142,10 @@ impl<T : Clone + Default > RingBuffer<T> {
         }
     }
 
-    pub fn skip(&mut self, cnt : usize) -> Result<usize> {
+    pub fn skip(&mut self, cnt: usize) -> Result<usize> {
         if self.is_empty() {
             Err(RingBufferError::Empty)
-        }
-        else {
+        } else {
             let count = cmp::min(cnt, self.count());
             let buf_len = self.buf.len();
             self.read_pos = (self.read_pos + count) % buf_len;
@@ -166,7 +167,7 @@ impl<T : Clone + Default > RingBuffer<T> {
         for idx in 0..cnt {
             let buf_idx = (idx + self.read_pos) % buf_len;
             data[idx] = self.buf[buf_idx].clone();
-        };
+        }
         debug_assert!(self.slots_free() <= self.capacity());
         Ok(cnt)
     }
@@ -185,7 +186,7 @@ impl<T : Clone + Default > RingBuffer<T> {
         for idx in 0..cnt {
             self.read_pos = (idx + self.read_pos) % buf_len;
             data[idx] = self.buf[self.read_pos].clone();
-        };
+        }
         debug_assert!(self.slots_free() <= self.capacity());
         Ok(cnt)
     }
@@ -193,16 +194,19 @@ impl<T : Clone + Default > RingBuffer<T> {
 
 impl<T> fmt::Debug for RingBuffer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Size: {}; write_pos: {}; read_pos: {}", self.size, self.write_pos, self.read_pos)
+        write!(
+            f,
+            "Size: {}; write_pos: {}; read_pos: {}",
+            self.size, self.write_pos, self.read_pos
+        )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const BUFFER_SIZE : usize = 10000;
+    const BUFFER_SIZE: usize = 10000;
 
     #[test]
     #[ignore]
@@ -213,10 +217,10 @@ mod tests {
         let mut i = 2;
         loop {
             if let Err(e) = ring_buffer.fill(i, 0) {
-                println!("Stopping: {}", e);//Won't be displayed except if --nocapture
+                println!("Stopping: {}", e); //Won't be displayed except if --nocapture
                 break;
             }
-            buffer.resize(i/2, 0);
+            buffer.resize(i / 2, 0);
 
             if let Err(e) = ring_buffer.read(buffer.as_mut_slice()) {
                 println!("Stopping: {}", e);

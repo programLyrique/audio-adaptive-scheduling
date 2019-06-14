@@ -1,10 +1,10 @@
 //! Parse a fileformat describing audiographs
+use pest::Parser;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use pest::Parser;
-use std::collections::HashMap;
 
 use petgraph::graph::NodeIndex;
 
@@ -13,7 +13,7 @@ use pest::error::Error as ParseError;
 use audiograph::*;
 
 #[derive(Debug, Default)]
-pub struct Node  {
+pub struct Node {
     pub id: String,
     pub nb_inlets: u32,
     pub nb_outlets: u32,
@@ -21,19 +21,20 @@ pub struct Node  {
     pub text: Option<String>,
     pub wcet: Option<f64>,
     pub more: HashMap<String, String>,
-    pub volume: f32
+    pub volume: f32,
 }
 
 impl Node {
-    pub fn new() -> Node  {
-        Node { id : String::new(),
-            nb_inlets : 0,
-            nb_outlets : 0,
-            class_name : String::new(),
-            text : None,
-            wcet : None,
+    pub fn new() -> Node {
+        Node {
+            id: String::new(),
+            nb_inlets: 0,
+            nb_outlets: 0,
+            class_name: String::new(),
+            text: None,
+            wcet: None,
             volume: 1.,
-            more : HashMap::new()
+            more: HashMap::new(),
         }
     }
 }
@@ -46,17 +47,23 @@ pub struct Edge {
     dst_port: u32,
 }
 
-
 #[derive(Parser)]
 #[grammar = "audiograph.pest"]
 pub struct AudiographParser;
 
-pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usize, samplerate: u32) -> Result<AudioGraph, ParseError<Rule>> {
-    let audiograph = AudiographParser::parse(Rule::file, audiograph)?.next().unwrap();
+pub fn parse_audiograph(
+    audiograph: &str,
+    buffer_size: usize,
+    nb_channels: usize,
+    samplerate: u32,
+) -> Result<AudioGraph, ParseError<Rule>> {
+    let audiograph = AudiographParser::parse(Rule::file, audiograph)?
+        .next()
+        .unwrap();
 
     use pest::iterators::*;
 
-    fn parse_node(pair : Pair<Rule>) -> Node {
+    fn parse_node(pair: Pair<Rule>) -> Node {
         let mut inner_rules = pair.into_inner();
         let mut node = Node::new();
         node.id = inner_rules.next().unwrap().as_str().to_string();
@@ -72,7 +79,9 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
                 "kind" => node.class_name = v.to_string(),
                 "wcet" => node.wcet = Some(v.parse().unwrap()),
                 "volume" => node.volume = v.parse().unwrap(),
-                _ => {node.more.insert(id.to_string(), v.to_string());},
+                _ => {
+                    node.more.insert(id.to_string(), v.to_string());
+                }
             }
         }
         node
@@ -80,7 +89,7 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
 
     use std::vec::IntoIter;
 
-    fn parse_edge(pair : Pair<Rule>) -> IntoIter<Edge> {
+    fn parse_edge(pair: Pair<Rule>) -> IntoIter<Edge> {
         let mut inner_rules = pair.into_inner();
         let mut port_ident = inner_rules.next().unwrap().into_inner();
         let mut src_id = port_ident.next().unwrap().as_str().to_string();
@@ -92,21 +101,28 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
             port_ident = inner_rule.into_inner().next().unwrap().into_inner();
             let dst_id = port_ident.next().unwrap().as_str().to_string();
             let dst_port = port_ident.next().unwrap().as_str().parse().unwrap();
-            edges.push(Edge {src_id, src_port, dst_id : dst_id.clone(), dst_port});
+            edges.push(Edge {
+                src_id,
+                src_port,
+                dst_id: dst_id.clone(),
+                dst_port,
+            });
             src_id = dst_id;
             src_port = dst_port;
         }
         edges.into_iter()
     }
 
-    let (nodes, edges) : (Vec<_>, Vec<_>)= audiograph.into_inner().flat_map(|r| r.into_inner())
-            .filter(|ref r| r.as_rule() != Rule::deadline)
-            //.inspect(|x| println!("Statement: {:?}.", x))
-            .partition(|ref r| r.as_rule() == Rule::node);
+    let (nodes, edges): (Vec<_>, Vec<_>) = audiograph
+        .into_inner()
+        .flat_map(|r| r.into_inner())
+        .filter(|ref r| r.as_rule() != Rule::deadline)
+        //.inspect(|x| println!("Statement: {:?}.", x))
+        .partition(|ref r| r.as_rule() == Rule::node);
 
     let nodes = nodes.into_iter().map(parse_node).collect::<Vec<_>>();
     let edges = edges.into_iter().flat_map(parse_edge).collect::<Vec<_>>();
-    let mut node_indexes : HashMap<String, NodeIndex> = HashMap::new();
+    let mut node_indexes: HashMap<String, NodeIndex> = HashMap::new();
 
     let mut audiograph = AudioGraph::new(buffer_size as u32, nb_channels as u32, samplerate);
 
@@ -134,11 +150,17 @@ pub fn parse_audiograph(audiograph : &str, buffer_size: usize, nb_channels: usiz
     Ok(audiograph)
 }
 
-pub fn parse_audiograph_from_file(filename : &str, buffer_size: usize, nb_channels: usize, samplerate: u32) -> Result<AudioGraph, ParseError<Rule>>  {
+pub fn parse_audiograph_from_file(
+    filename: &str,
+    buffer_size: usize,
+    nb_channels: usize,
+    samplerate: u32,
+) -> Result<AudioGraph, ParseError<Rule>> {
     let path = Path::new(filename);
     let mut file = File::open(&path).expect("Impossible to open file.");
     let mut s = String::new();
-    file.read_to_string(&mut s).expect("Impossible to read file.");
+    file.read_to_string(&mut s)
+        .expect("Impossible to read file.");
     parse_audiograph(&s, buffer_size, nb_channels, samplerate)
 }
 
@@ -150,22 +172,33 @@ mod tests {
     fn parse_audiograph_test() {
         let mut file = File::open("audiograph_wcet_test.ag").expect("Impossible to open file.");
         let mut s = String::new();
-        file.read_to_string(&mut s).expect("Impossible to read file.");
+        file.read_to_string(&mut s)
+            .expect("Impossible to read file.");
         assert!(AudiographParser::parse(Rule::file, &s).is_ok());
     }
 
     #[test]
     fn build_audiograph_test() {
-        let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2, 44_100).expect("Impossible to open file.");
-        println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
+        let audiograph = parse_audiograph_from_file("audiograph_wcet_test.ag", 64, 2, 44_100)
+            .expect("Impossible to open file.");
+        println!(
+            "Nodes={} and edges={}",
+            audiograph.nb_nodes(),
+            audiograph.nb_edges()
+        );
         assert!(audiograph.nb_nodes() == 5);
         assert!(audiograph.nb_edges() == 6);
     }
 
     #[test]
     fn build_audiograph_down_test() {
-        let audiograph = parse_audiograph_from_file("downsampling_test.ag", 64, 2, 44_100).expect("Impossible to open file.");
-        println!("Nodes={} and edges={}", audiograph.nb_nodes(), audiograph.nb_edges() );
+        let audiograph = parse_audiograph_from_file("downsampling_test.ag", 64, 2, 44_100)
+            .expect("Impossible to open file.");
+        println!(
+            "Nodes={} and edges={}",
+            audiograph.nb_nodes(),
+            audiograph.nb_edges()
+        );
         assert!(audiograph.nb_nodes() == 6);
         assert!(audiograph.nb_edges() == 7);
     }
