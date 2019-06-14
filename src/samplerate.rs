@@ -268,7 +268,7 @@ impl SmartResampler {
         // This number is often less than the size of the provided input buffer (interm_buffer)
         // especially if the resampler is a "sync" resampler
 
-        let gen_size = frames_gen * nb_channels;
+        let _gen_size = frames_gen * nb_channels;
         let used_size = frames_used * nb_channels;
 
         self.input_ring.skip(used_size as usize).unwrap();

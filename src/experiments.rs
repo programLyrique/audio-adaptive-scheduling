@@ -39,7 +39,7 @@ impl fmt::Debug for RandomGenerator {
 
 impl RandomGenerator {
     pub fn new(size: usize, p: f64) -> RandomGenerator {
-        let seed: &[_] = &[1, 21, 37, 4];
+        let _seed: &[_] = &[1, 21, 37, 4];
         //let rng : StdRng = SeedableRng::from_seed(seed);
         let rng = thread_rng();
         RandomGenerator {
@@ -117,8 +117,8 @@ impl<T: fmt::Display + AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for Ran
 #[cfg(test)]
 mod tests {
     use super::*;
-    use effect::*;
-    use rand::{thread_rng, Rng};
+    
+    use rand::{Rng};
 
     #[test]
     fn test_graph_gen() {

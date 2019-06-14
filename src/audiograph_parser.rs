@@ -1,7 +1,7 @@
 //! Parse a fileformat describing audiographs
 use pest::Parser;
 use std::collections::HashMap;
-use std::error::Error;
+
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;

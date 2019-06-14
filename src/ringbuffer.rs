@@ -97,7 +97,7 @@ impl<T: Clone + Default> RingBuffer<T> {
         debug_assert!(self.slots_free() <= self.capacity());
         let cnt = cmp::min(data.len(), self.slots_free());
         {
-            let mut buf = self.buf.as_mut_slice();
+            let buf = self.buf.as_mut_slice();
             let buf_len = buf.len();
             for idx in 0..cnt {
                 buf[self.write_pos] = data[idx].clone();
@@ -119,7 +119,7 @@ impl<T: Clone + Default> RingBuffer<T> {
         debug_assert!(self.slots_free() <= self.capacity());
         let cnt = cmp::min(count, self.slots_free());
         {
-            let mut buf = self.buf.as_mut_slice();
+            let buf = self.buf.as_mut_slice();
             let buf_len = buf.len();
 
             for _ in 0..cnt {
