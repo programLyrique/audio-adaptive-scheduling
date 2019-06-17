@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use std::fmt;
 
 use audiograph_parser;
-use samplerate;
 use faust_effect;
+use samplerate;
 
 #[derive(Debug)]
 pub enum AudioGraphError {

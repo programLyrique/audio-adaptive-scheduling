@@ -117,8 +117,8 @@ impl<T: fmt::Display + AudioEffect + Copy + Hash + Eq> GraphGenerator<T> for Ran
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    use rand::{Rng};
+
+    use rand::Rng;
 
     #[test]
     fn test_graph_gen() {

@@ -1,3 +1,8 @@
 import("stdfaust.lib");
 
-process = pm.guitar(2, 0.3, 0.8, 1);
+length = hslider("length",2,0.2,10,0.1);
+pluckPosition = hslider("pluckPosition", 0.3, 0, 1, 0.01);
+gain = hslider("gain", 0.8, 0,1, 0.01);
+trigger = button("trigger");
+
+process = pm.guitar(length, pluckPosition, gain, trigger);

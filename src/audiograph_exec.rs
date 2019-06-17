@@ -10,11 +10,10 @@ extern crate time;
 use crossbeam_channel::unbounded;
 use portaudio as pa;
 
-
 use std::thread;
 use std::time as rust_time; //To be used for thread::sleep for instance
 
-use time::{PreciseTime};
+use time::PreciseTime;
 
 use std::ffi::OsStr;
 use std::fs::File;
