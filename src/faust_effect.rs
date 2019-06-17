@@ -6,6 +6,8 @@ use audiograph_parser;
 
 use std::fmt;
 
+use amath;
+
 pub fn Guitar_faustpower2_f(value: f32) -> f32 {
     return value * value;
 }
@@ -245,21 +247,17 @@ impl AudioEffect for Guitar {
         let fSlow14: f32 = fSlow3 - fSlow5;
         let fSlow15: f32 =
             ((0.0 - fSlow7) * (0.0 - (0.5 * fSlow8))) * (0.0 - (0.333333343 * fSlow9));
-        let iSlow16: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 1) as f32) as i32;
+        let iSlow16: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 1) as f32) as i32;
         let iSlow17: i32 = iSlow16 + 1;
         let fSlow18: f32 = 0.5 * ((fSlow6 * (0.0 - fSlow8)) * (0.0 - (0.5 * fSlow9)));
-        let iSlow19: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 2) as f32) as i32;
+        let iSlow19: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 2) as f32) as i32;
         let iSlow20: i32 = iSlow19 + 1;
         let fSlow21: f32 = fSlow6 * fSlow7;
         let fSlow22: f32 = 0.166666672 * (fSlow21 * (0.0 - fSlow9));
-        let iSlow23: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 3) as f32) as i32;
+        let iSlow23: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 3) as f32) as i32;
         let iSlow24: i32 = iSlow23 + 1;
         let fSlow25: f32 = 0.0416666679 * (fSlow21 * fSlow8);
-        let iSlow26: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 4) as f32) as i32;
+        let iSlow26: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow11 + 4) as f32) as i32;
         let iSlow27: i32 = iSlow26 + 1;
         let fSlow28: f32 = self.fConst1 * (fSlow2 * fSlow1);
         let fSlow29: f32 = fSlow28 + -1.49999499;
@@ -277,21 +275,17 @@ impl AudioEffect for Guitar {
         let fSlow39: f32 = fSlow28 - fSlow30;
         let fSlow40: f32 =
             ((0.0 - fSlow32) * (0.0 - (0.5 * fSlow33))) * (0.0 - (0.333333343 * fSlow34));
-        let iSlow41: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 1) as f32) as i32;
+        let iSlow41: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 1) as f32) as i32;
         let iSlow42: i32 = iSlow41 + 2;
         let fSlow43: f32 = 0.5 * ((fSlow31 * (0.0 - fSlow33)) * (0.0 - (0.5 * fSlow34)));
-        let iSlow44: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 2) as f32) as i32;
+        let iSlow44: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 2) as f32) as i32;
         let iSlow45: i32 = iSlow44 + 2;
         let fSlow46: f32 = fSlow31 * fSlow32;
         let fSlow47: f32 = 0.166666672 * (fSlow46 * (0.0 - fSlow34));
-        let iSlow48: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 3) as f32) as i32;
+        let iSlow48: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 3) as f32) as i32;
         let iSlow49: i32 = iSlow48 + 2;
         let fSlow50: f32 = 0.0416666679 * (fSlow46 * fSlow33);
-        let iSlow51: i32 =
-            f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 4) as f32) as i32;
+        let iSlow51: i32 = f32::min(self.fConst2, std::cmp::max(0, iSlow36 + 4) as f32) as i32;
         let iSlow52: i32 = iSlow51 + 2;
         let fSlow53: f32 = f32::tan(self.fConst3 / fSlow0);
         let fSlow54: f32 = 1.0 / fSlow53;
@@ -374,8 +368,7 @@ impl AudioEffect for Guitar {
             self.fRec26[(self.IOTA & 2047) as usize] = (0.0500000007
                 * self.fRec26[((self.IOTA - 1) & 2047) as usize])
                 + (0.949999988 * self.fVec3[1]);
-            let mut fRec24: f32 = (fSlow10
-                * self.fRec26[((self.IOTA - iSlow12) & 2047) as usize])
+            let mut fRec24: f32 = (fSlow10 * self.fRec26[((self.IOTA - iSlow12) & 2047) as usize])
                 + (fSlow14
                     * ((((fSlow15 * self.fRec26[((self.IOTA - iSlow16) & 2047) as usize])
                         + (fSlow18 * self.fRec26[((self.IOTA - iSlow19) & 2047) as usize]))
@@ -385,8 +378,7 @@ impl AudioEffect for Guitar {
             let mut fRec20: f32 = fTemp1 + self.fRec19[1];
             let mut fRec21: f32 = fRec24;
             self.fRec16[(self.IOTA & 2047) as usize] = fRec20;
-            let mut fRec17: f32 = (fSlow35
-                * self.fRec16[((self.IOTA - iSlow65) & 2047) as usize])
+            let mut fRec17: f32 = (fSlow35 * self.fRec16[((self.IOTA - iSlow65) & 2047) as usize])
                 + (fSlow39
                     * ((((fSlow40 * self.fRec16[((self.IOTA - iSlow66) & 2047) as usize])
                         + (fSlow43 * self.fRec16[((self.IOTA - iSlow67) & 2047) as usize]))
@@ -428,6 +420,117 @@ impl AudioEffect for Guitar {
                 self.fRec15[j1 as usize] = self.fRec15[(j1 - 1) as usize];
             }
             self.iRec6[1] = self.iRec6[0];
+            self.fRec0[1] = self.fRec0[0];
+        }
+    }
+}
+
+/****************************************
+** Transposer
+****************************************/
+
+pub struct Transposer {
+    fDummy: f32,
+    IOTA: i32,
+    fVec0: [f32; 131072],
+    fHslider0: u32,
+    fHslider1: u32,
+    fRec0: [f32; 2],
+    fHslider2: i32,
+}
+
+impl Transposer {
+    pub fn init() -> Transposer {
+        Transposer {
+            fDummy: 0 as f32,
+            IOTA: 0,
+            fVec0: [0.0; 131072],
+            fHslider0: 0,
+            fHslider1: 0,
+            fRec0: [0.0; 2],
+            fHslider2: 0,
+        }
+    }
+
+    pub fn instanceClear(&mut self) {
+        self.IOTA = 0;
+        for l0 in 0..131072 {
+            self.fVec0[l0 as usize] = 0.0;
+        }
+        for l1 in 0..2 {
+            self.fRec0[l1 as usize] = 0.0;
+        }
+    }
+
+    pub fn new(semitones: i32) -> Transposer {
+        let mut transposer = Transposer::init();
+        transposer.fHslider2 = semitones;
+        transposer
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Transposer {
+        let semitones: i32 = node_infos.more["semitones"]
+            .parse()
+            .expect("semitones must be a positive or negative integer");
+        let transposer = Transposer::new(semitones);
+        transposer.check_io_node_infos(node_infos);
+        transposer
+    }
+}
+
+impl fmt::Display for Transposer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "transposer({})", self.fHslider2)
+    }
+}
+
+impl AudioEffect for Transposer {
+    fn nb_inputs(&self) -> usize {
+        1
+    }
+    fn nb_outputs(&self) -> usize {
+        1
+    }
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]) {
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
+
+        let input = inputs[0].buffer();
+        let output = outputs[0].buffer_mut();
+        let count = output.len();
+
+        let fSlow0: f32 = self.fHslider0 as f32;
+        let fSlow1: f32 = f32::powf(2.0, 0.0833333358 * (self.fHslider1 as f32));
+        let fSlow2: f32 = 1.0 / (self.fHslider2 as f32);
+        for i in 0..count {
+            let mut fTemp0: f32 = input[i as usize] as f32;
+            self.fVec0[(self.IOTA & 131071) as usize] = fTemp0;
+            self.fRec0[0] = amath::fmod(fSlow0 + ((self.fRec0[1] + 1.0) - fSlow1), fSlow0);
+            let mut iTemp1: i32 = self.fRec0[0] as i32;
+            let mut fTemp2: f32 = f32::floor(self.fRec0[0]);
+            let mut fTemp3: f32 = 1.0 - self.fRec0[0];
+            let mut fTemp4: f32 = f32::min(fSlow2 * self.fRec0[0], 1.0);
+            let mut fTemp5: f32 = fSlow0 + self.fRec0[0];
+            let mut iTemp6: i32 = fTemp5 as i32;
+            let mut fTemp7: f32 = f32::floor(fTemp5);
+            output[i as usize] = ((((self.fVec0[((self.IOTA
+                - std::cmp::min(65537, std::cmp::max(0, iTemp1)))
+                & 131071) as usize]
+                * (fTemp2 + fTemp3))
+                + ((self.fRec0[0] - fTemp2)
+                    * self.fVec0[((self.IOTA
+                        - std::cmp::min(65537, std::cmp::max(0, iTemp1 + 1)))
+                        & 131071) as usize]))
+                * fTemp4)
+                + (((self.fVec0[((self.IOTA - std::cmp::min(65537, std::cmp::max(0, iTemp6)))
+                    & 131071) as usize]
+                    * ((fTemp7 + fTemp3) - fSlow0))
+                    + ((fSlow0 + (self.fRec0[0] - fTemp7))
+                        * self.fVec0[((self.IOTA
+                            - std::cmp::min(65537, std::cmp::max(0, iTemp6 + 1)))
+                            & 131071) as usize]))
+                    * (1.0 - fTemp4))) as f32;
+            self.IOTA = self.IOTA + 1;
             self.fRec0[1] = self.fRec0[0];
         }
     }

@@ -19,6 +19,7 @@ pub mod ringbuffer;
 pub mod samplerate;
 pub mod sndfile;
 //pub mod reverb;
+pub mod amath;
 pub mod audiograph;
 pub mod audiograph_parser;
 pub mod effect;

@@ -102,6 +102,7 @@ impl DspNode {
                 node_infos.nb_outlets as usize,
             )),
             "guitar" => Box::new(faust_effect::Guitar::from_node_infos(&node_infos)),
+            "transpose" => Box::new(faust_effect::Transposer::from_node_infos(&node_infos)),
             "sink" => Box::new(InputsOutputsAdaptor::new(
                 node_infos.nb_inlets as usize,
                 nb_channels,
