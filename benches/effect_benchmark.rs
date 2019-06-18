@@ -12,6 +12,7 @@ use rand::prelude::*;
 
 use audio_adaptive::audiograph::*;
 use audio_adaptive::samplerate;
+use audio_adaptive::faust_effect::*;
 
 fn osc_bench(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(345987);
@@ -129,5 +130,43 @@ fn mixer_bench(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, osc_bench, mod_bench, resampler_bench, mixer_bench);
+fn guitar_bench(c: &mut Criterion) {
+    c.bench_function_over_inputs(
+        "guitar",
+        move |b: &mut Bencher, n: &usize| {
+            let mut guitar = Guitar::new(1., 0.45, 0.9,1);
+            let mut input = vec![DspEdge::new(1, 1, *n, 44100); 1];
+            b.iter(|| {
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100); 1];
+                guitar.process(&input, &mut output)
+            })
+        },
+        vec![64, 128, 256, 512, 1024, 2048, 4096],
+    );
+}
+
+fn transpose_bench(c: &mut Criterion) {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1., 1.);
+    c.bench_function_over_inputs(
+        "transpose",
+        move |b: &mut Bencher, n: &usize| {
+            let mut transposer = Transposer::new(11);
+            let mut input = vec![DspEdge::new(1, 1, *n, 44100); 1];
+            //let size = input[0].buffer().len();
+            input[0].buffer_mut().copy_from_slice(
+                &rng.sample_iter(&unity_interval)
+                    .take(*n)
+                    .collect::<Vec<f32>>(),
+            );
+            b.iter(|| {
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100); 1];
+                transposer.process(&input, &mut output)
+            })
+        },
+        vec![64, 128, 256, 512, 1024, 2048, 4096],
+    );
+}
+
+criterion_group!(benches, osc_bench, mod_bench, resampler_bench, mixer_bench, guitar_bench, transpose_bench);
 criterion_main!(benches);
