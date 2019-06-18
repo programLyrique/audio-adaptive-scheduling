@@ -1,3 +1,0 @@
-import("stdfaust.lib");
-
-process = re.zita_rev1_stereo(

@@ -402,8 +402,8 @@ impl AudioEffect for Guitar {
             self.iRec10[1] = self.iRec10[0];
             self.fRec22[1] = self.fRec22[0];
             self.fRec25[1] = self.fRec25[0];
-            for j0 in (0..4).rev() {
-                self.fRec27[j0 as usize] = self.fRec27[(j0 - 1) as usize];
+            for j0 in (4..0) {
+                self.fRec27[j0] = self.fRec27[j0 - 1];
             }
             self.IOTA = self.IOTA + 1;
             self.fVec0[1] = self.fVec0[0];
@@ -416,8 +416,8 @@ impl AudioEffect for Guitar {
             self.fVec3[1] = self.fVec3[0];
             self.fRec19[1] = self.fRec19[0];
             self.fRec18[1] = self.fRec18[0];
-            for j1 in (0..4).rev() {
-                self.fRec15[j1 as usize] = self.fRec15[(j1 - 1) as usize];
+            for j1 in (4..0) {
+                self.fRec15[j1] = self.fRec15[j1 - 1];
             }
             self.iRec6[1] = self.iRec6[0];
             self.fRec0[1] = self.fRec0[0];
@@ -445,8 +445,8 @@ impl Transposer {
             fDummy: 0 as f32,
             IOTA: 0,
             fVec0: [0.0; 131072],
-            fHslider0: 0,
-            fHslider1: 0,
+            fHslider0: 128,
+            fHslider1: 32,
             fRec0: [0.0; 2],
             fHslider2: 0,
         }
