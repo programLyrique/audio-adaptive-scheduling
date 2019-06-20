@@ -242,6 +242,29 @@ fn compressor_bench(c: &mut Criterion) {
     );
 }
 
+fn autowah_bench(c: &mut Criterion) {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1., 1.);
+    c.bench_function_over_inputs(
+        "autowah",
+        move |b: &mut Bencher, n: &usize| {
+            let mut autowah = Autowah::new(0.9);
+            let mut input = vec![DspEdge::new(1, 1, *n, 44100); 1];
+            //let size = input[0].buffer().len();
+            input[0].buffer_mut().copy_from_slice(
+                &rng.sample_iter(&unity_interval)
+                    .take(*n)
+                    .collect::<Vec<f32>>(),
+            );
+            b.iter(|| {
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100); 1];
+                autowah.process(&input, &mut output)
+            })
+        },
+        vec![64, 128, 256, 512, 1024, 2048, 4096],
+    );
+}
+
 criterion_group!(
     benches,
     osc_bench,
@@ -252,6 +275,7 @@ criterion_group!(
     transpose_bench,
     zita_reverb_bench,
     freeverb_bench,
-    compressor_bench
+    compressor_bench,
+    autowah_bench
 );
 criterion_main!(benches);
