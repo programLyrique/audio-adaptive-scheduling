@@ -168,6 +168,34 @@ fn transpose_bench(c: &mut Criterion) {
     );
 }
 
+fn zita_reverb_bench(c: &mut Criterion) {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1., 1.);
+    c.bench_function_over_inputs(
+        "zita_reverb",
+        move |b: &mut Bencher, n: &usize| {
+            let mut transposer = ZitaReverb::new(10., 300, 10000, 6., 10., 96_200);
+            let mut inputs = vec![DspEdge::new(1, 1, *n, 44100); 2];
+            //let size = input[0].buffer().len();
+            inputs[0].buffer_mut().copy_from_slice(
+                &rng.sample_iter(&unity_interval)
+                    .take(*n)
+                    .collect::<Vec<f32>>(),
+            );
+            inputs[1].buffer_mut().copy_from_slice(
+                &rng.sample_iter(&unity_interval)
+                    .take(*n)
+                    .collect::<Vec<f32>>(),
+            );
+            b.iter(|| {
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100); 2];
+                transposer.process(&inputs, &mut output)
+            })
+        },
+        vec![64, 128, 256, 512, 1024, 2048, 4096],
+    );
+}
+
 criterion_group!(
     benches,
     osc_bench,
@@ -175,6 +203,7 @@ criterion_group!(
     resampler_bench,
     mixer_bench,
     guitar_bench,
-    transpose_bench
+    transpose_bench,
+    zita_reverb_bench
 );
 criterion_main!(benches);
