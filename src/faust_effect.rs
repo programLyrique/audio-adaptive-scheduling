@@ -1066,7 +1066,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow14: f32 = 1.0 - fSlow12;
         let fSlow15: f32 = self.fHslider4 as f32;
         let fSlow16: f32 = f32::floor((0.0191229992 * fSlow15) + 0.5);
-        let iSlow17: i32 = (f32::min(
+        let iSlow17: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1077,7 +1077,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst6,
-        ) as i32);
+        ) as i32;
         let iSlow18: i32 = f32::min(
             8192.0,
             f32::max(0.0, self.fConst7 * (self.fHslider5 as f32)),
@@ -1099,7 +1099,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow27: f32 = fSlow20 * (fSlow25 + (1.0 - fSlow24));
         let fSlow28: f32 = (f32::exp(self.fConst10 / fSlow10) / fSlow20) + -1.0;
         let fSlow29: f32 = f32::floor((0.0273330007 * fSlow15) + 0.5);
-        let iSlow30: i32 = (f32::min(
+        let iSlow30: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1110,7 +1110,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst12,
-        ) as i32);
+        ) as i32;
         let iSlow31: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow29)))) as i32) as f32,
             self.fConst13,
@@ -1128,7 +1128,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow39: f32 = fSlow32 * (fSlow37 + (1.0 - fSlow36));
         let fSlow40: f32 = (f32::exp(self.fConst15 / fSlow10) / fSlow32) + -1.0;
         let fSlow41: f32 = f32::floor((0.0292910002 * fSlow15) + 0.5);
-        let iSlow42: i32 = (f32::min(
+        let iSlow42: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1139,7 +1139,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst17,
-        ) as i32);
+        ) as i32;
         let iSlow43: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow41)))) as i32) as f32,
             self.fConst18,
@@ -1157,7 +1157,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow51: f32 = fSlow44 * (fSlow49 + (1.0 - fSlow48));
         let fSlow52: f32 = (f32::exp(self.fConst20 / fSlow10) / fSlow44) + -1.0;
         let fSlow53: f32 = f32::floor((0.0244210009 * fSlow15) + 0.5);
-        let iSlow54: i32 = (f32::min(
+        let iSlow54: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1168,7 +1168,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst22,
-        ) as i32);
+        ) as i32;
         let iSlow55: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow53)))) as i32) as f32,
             self.fConst23,
@@ -1186,7 +1186,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow63: f32 = fSlow56 * (fSlow61 + (1.0 - fSlow60));
         let fSlow64: f32 = (f32::exp(self.fConst25 / fSlow10) / fSlow56) + -1.0;
         let fSlow65: f32 = f32::floor((0.0134579996 * fSlow15) + 0.5);
-        let iSlow66: i32 = (f32::min(
+        let iSlow66: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1195,7 +1195,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst27,
-        ) as i32);
+        ) as i32;
         let iSlow67: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow65)))) as i32) as f32,
             self.fConst28,
@@ -1213,7 +1213,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow75: f32 = fSlow68 * (fSlow73 + (1.0 - fSlow72));
         let fSlow76: f32 = (f32::exp(self.fConst30 / fSlow10) / fSlow68) + -1.0;
         let fSlow77: f32 = f32::floor((0.0316039994 * fSlow15) + 0.5);
-        let iSlow78: i32 = (f32::min(
+        let iSlow78: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1224,7 +1224,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst32,
-        ) as i32);
+        ) as i32;
         let iSlow79: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow77)))) as i32) as f32,
             self.fConst33,
@@ -1242,7 +1242,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow87: f32 = fSlow80 * (fSlow85 + (1.0 - fSlow84));
         let fSlow88: f32 = (f32::exp(self.fConst35 / fSlow10) / fSlow80) + -1.0;
         let fSlow89: f32 = f32::floor((0.0229039993 * fSlow15) + 0.5);
-        let iSlow90: i32 = (f32::min(
+        let iSlow90: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1253,7 +1253,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst37,
-        ) as i32);
+        ) as i32;
         let iSlow91: i32 = f32::min(
             (f32::powf(2.0, f32::max(1.0, f32::ceil(1.44269502 * f32::ln(fSlow89)))) as i32) as f32,
             self.fConst38,
@@ -1271,7 +1271,7 @@ impl AudioEffect for ZitaReverb {
         let fSlow99: f32 = fSlow92 * (fSlow97 + (1.0 - fSlow96));
         let fSlow100: f32 = (f32::exp(self.fConst40 / fSlow10) / fSlow92) + -1.0;
         let fSlow101: f32 = f32::floor((0.0203460008 * fSlow15) + 0.5);
-        let iSlow102: i32 = (f32::min(
+        let iSlow102: i32 = f32::min(
             (f32::powf(
                 2.0,
                 f32::max(
@@ -1282,7 +1282,7 @@ impl AudioEffect for ZitaReverb {
                 ),
             ) as i32) as f32,
             self.fConst42,
-        ) as i32);
+        ) as i32;
         let iSlow103: i32 = f32::min(
             (f32::powf(
                 2.0,
@@ -1719,19 +1719,19 @@ impl MonoFreeverb {
 
     pub fn instanceConstants(&mut self, sample_rate: i32) {
         self.fSampleRate = sample_rate;
-        self.fConst0 = f32::min(192000.0, f32::max(1.0, (self.fSampleRate as f32)));
-        self.fConst1 = (((0.0253061224 * self.fConst0) as i32) as f32);
-        self.fConst2 = (((0.0269387756 * self.fConst0) as i32) as f32);
-        self.fConst3 = (((0.0289569162 * self.fConst0) as i32) as f32);
-        self.fConst4 = (((0.0307482984 * self.fConst0) as i32) as f32);
-        self.fConst5 = (((0.0322448984 * self.fConst0) as i32) as f32);
-        self.fConst6 = (((0.033809524 * self.fConst0) as i32) as f32);
-        self.fConst7 = (((0.0353061222 * self.fConst0) as i32) as f32);
-        self.fConst8 = (((0.0366666652 * self.fConst0) as i32) as f32);
-        self.fConst9 = (((0.0126077095 * self.fConst0) as i32) as f32);
-        self.fConst10 = (((0.00999999978 * self.fConst0) as i32) as f32);
-        self.fConst11 = (((0.00773242628 * self.fConst0) as i32) as f32);
-        self.fConst12 = (((0.00510204071 * self.fConst0) as i32) as f32);
+        self.fConst0 = f32::min(192000.0, f32::max(1.0, self.fSampleRate as f32));
+        self.fConst1 = ((0.0253061224 * self.fConst0) as i32) as f32;
+        self.fConst2 = ((0.0269387756 * self.fConst0) as i32) as f32;
+        self.fConst3 = ((0.0289569162 * self.fConst0) as i32) as f32;
+        self.fConst4 = ((0.0307482984 * self.fConst0) as i32) as f32;
+        self.fConst5 = ((0.0322448984 * self.fConst0) as i32) as f32;
+        self.fConst6 = ((0.033809524 * self.fConst0) as i32) as f32;
+        self.fConst7 = ((0.0353061222 * self.fConst0) as i32) as f32;
+        self.fConst8 = ((0.0366666652 * self.fConst0) as i32) as f32;
+        self.fConst9 = ((0.0126077095 * self.fConst0) as i32) as f32;
+        self.fConst10 = ((0.00999999978 * self.fConst0) as i32) as f32;
+        self.fConst11 = ((0.00773242628 * self.fConst0) as i32) as f32;
+        self.fConst12 = ((0.00510204071 * self.fConst0) as i32) as f32;
     }
 
     pub fn instanceInit(&mut self, sample_rate: i32) {
@@ -1804,75 +1804,75 @@ impl AudioEffect for MonoFreeverb {
             self.instanceInit(actual_samplerate);
         }
 
-        let mut fSlow0: f32 = (self.fHslider0 as f32);
-        let mut fSlow1: f32 = (self.fHslider1 as f32);
-        let mut fSlow2: f32 = (1.0 - fSlow1);
-        let mut fSlow3: f32 = (self.fHslider2 as f32);
-        let mut iSlow4: i32 = ((self.fConst1 + fSlow3) as i32);
-        let mut iSlow5: i32 = ((self.fConst2 + fSlow3) as i32);
-        let mut iSlow6: i32 = ((self.fConst3 + fSlow3) as i32);
-        let mut iSlow7: i32 = ((self.fConst4 + fSlow3) as i32);
-        let mut iSlow8: i32 = ((self.fConst5 + fSlow3) as i32);
-        let mut iSlow9: i32 = ((self.fConst6 + fSlow3) as i32);
-        let mut iSlow10: i32 = ((self.fConst7 + fSlow3) as i32);
-        let mut iSlow11: i32 = ((self.fConst8 + fSlow3) as i32);
-        let mut fSlow12: f32 = (self.fHslider3 as f32);
-        let mut fSlow13: f32 = (fSlow3 + -1.0);
-        let mut iSlow14: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst9 + fSlow13))) as i32);
-        let mut iSlow15: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst10 + fSlow13))) as i32);
-        let mut iSlow16: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst11 + fSlow13))) as i32);
-        let mut iSlow17: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst12 + fSlow13))) as i32);
+        let fSlow0: f32 = self.fHslider0 as f32;
+        let fSlow1: f32 = self.fHslider1 as f32;
+        let fSlow2: f32 = 1.0 - fSlow1;
+        let fSlow3: f32 = self.fHslider2 as f32;
+        let iSlow4: i32 = (self.fConst1 + fSlow3) as i32;
+        let iSlow5: i32 = (self.fConst2 + fSlow3) as i32;
+        let iSlow6: i32 = (self.fConst3 + fSlow3) as i32;
+        let iSlow7: i32 = (self.fConst4 + fSlow3) as i32;
+        let iSlow8: i32 = (self.fConst5 + fSlow3) as i32;
+        let iSlow9: i32 = (self.fConst6 + fSlow3) as i32;
+        let iSlow10: i32 = (self.fConst7 + fSlow3) as i32;
+        let iSlow11: i32 = (self.fConst8 + fSlow3) as i32;
+        let fSlow12: f32 = self.fHslider3 as f32;
+        let fSlow13: f32 = fSlow3 + -1.0;
+        let iSlow14: i32 = f32::min(1024.0, f32::max(0.0, self.fConst9 + fSlow13)) as i32;
+        let iSlow15: i32 = f32::min(1024.0, f32::max(0.0, self.fConst10 + fSlow13)) as i32;
+        let iSlow16: i32 = f32::min(1024.0, f32::max(0.0, self.fConst11 + fSlow13)) as i32;
+        let iSlow17: i32 = f32::min(1024.0, f32::max(0.0, self.fConst12 + fSlow13)) as i32;
         for i in 0..count {
-            let mut fTemp0: f32 = (input[i as usize] as f32);
-            self.fRec9[0] = ((fSlow1 * self.fRec9[1]) + (fSlow2 * self.fRec8[1]));
-            self.fVec0[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec9[0]));
+            let mut fTemp0: f32 = input[i as usize] as f32;
+            self.fRec9[0] = (fSlow1 * self.fRec9[1]) + (fSlow2 * self.fRec8[1]);
+            self.fVec0[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec9[0]);
             self.fRec8[0] = self.fVec0[((self.IOTA - iSlow4) & 8191) as usize];
-            self.fRec11[0] = ((fSlow1 * self.fRec11[1]) + (fSlow2 * self.fRec10[1]));
-            self.fVec1[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec11[0]));
+            self.fRec11[0] = (fSlow1 * self.fRec11[1]) + (fSlow2 * self.fRec10[1]);
+            self.fVec1[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec11[0]);
             self.fRec10[0] = self.fVec1[((self.IOTA - iSlow5) & 8191) as usize];
-            self.fRec13[0] = ((fSlow1 * self.fRec13[1]) + (fSlow2 * self.fRec12[1]));
-            self.fVec2[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec13[0]));
+            self.fRec13[0] = (fSlow1 * self.fRec13[1]) + (fSlow2 * self.fRec12[1]);
+            self.fVec2[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec13[0]);
             self.fRec12[0] = self.fVec2[((self.IOTA - iSlow6) & 8191) as usize];
-            self.fRec15[0] = ((fSlow1 * self.fRec15[1]) + (fSlow2 * self.fRec14[1]));
-            self.fVec3[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec15[0]));
+            self.fRec15[0] = (fSlow1 * self.fRec15[1]) + (fSlow2 * self.fRec14[1]);
+            self.fVec3[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec15[0]);
             self.fRec14[0] = self.fVec3[((self.IOTA - iSlow7) & 8191) as usize];
-            self.fRec17[0] = ((fSlow1 * self.fRec17[1]) + (fSlow2 * self.fRec16[1]));
-            self.fVec4[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec17[0]));
+            self.fRec17[0] = (fSlow1 * self.fRec17[1]) + (fSlow2 * self.fRec16[1]);
+            self.fVec4[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec17[0]);
             self.fRec16[0] = self.fVec4[((self.IOTA - iSlow8) & 8191) as usize];
-            self.fRec19[0] = ((fSlow1 * self.fRec19[1]) + (fSlow2 * self.fRec18[1]));
-            self.fVec5[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec19[0]));
+            self.fRec19[0] = (fSlow1 * self.fRec19[1]) + (fSlow2 * self.fRec18[1]);
+            self.fVec5[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec19[0]);
             self.fRec18[0] = self.fVec5[((self.IOTA - iSlow9) & 8191) as usize];
-            self.fRec21[0] = ((fSlow1 * self.fRec21[1]) + (fSlow2 * self.fRec20[1]));
-            self.fVec6[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec21[0]));
+            self.fRec21[0] = (fSlow1 * self.fRec21[1]) + (fSlow2 * self.fRec20[1]);
+            self.fVec6[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec21[0]);
             self.fRec20[0] = self.fVec6[((self.IOTA - iSlow10) & 8191) as usize];
-            self.fRec23[0] = ((fSlow1 * self.fRec23[1]) + (fSlow2 * self.fRec22[1]));
-            self.fVec7[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec23[0]));
+            self.fRec23[0] = (fSlow1 * self.fRec23[1]) + (fSlow2 * self.fRec22[1]);
+            self.fVec7[(self.IOTA & 8191) as usize] = fTemp0 + (fSlow0 * self.fRec23[0]);
             self.fRec22[0] = self.fVec7[((self.IOTA - iSlow11) & 8191) as usize];
-            let mut fTemp1: f32 = ((((((((self.fRec8[0] + self.fRec10[0]) + self.fRec12[0])
+            let mut fTemp1: f32 = (((((((self.fRec8[0] + self.fRec10[0]) + self.fRec12[0])
                 + self.fRec14[0])
                 + self.fRec16[0])
                 + self.fRec18[0])
                 + self.fRec20[0])
                 + self.fRec22[0])
-                + (fSlow12 * self.fRec6[1]));
+                + (fSlow12 * self.fRec6[1]);
             self.fVec8[(self.IOTA & 2047) as usize] = fTemp1;
             self.fRec6[0] = self.fVec8[((self.IOTA - iSlow14) & 2047) as usize];
-            let mut fRec7: f32 = (0.0 - (fSlow12 * fTemp1));
-            let mut fTemp2: f32 = (self.fRec6[1] + (fRec7 + (fSlow12 * self.fRec4[1])));
+            let mut fRec7: f32 = 0.0 - (fSlow12 * fTemp1);
+            let mut fTemp2: f32 = self.fRec6[1] + (fRec7 + (fSlow12 * self.fRec4[1]));
             self.fVec9[(self.IOTA & 2047) as usize] = fTemp2;
             self.fRec4[0] = self.fVec9[((self.IOTA - iSlow15) & 2047) as usize];
-            let mut fRec5: f32 = (0.0 - (fSlow12 * fTemp2));
-            let mut fTemp3: f32 = (self.fRec4[1] + (fRec5 + (fSlow12 * self.fRec2[1])));
+            let mut fRec5: f32 = 0.0 - (fSlow12 * fTemp2);
+            let mut fTemp3: f32 = self.fRec4[1] + (fRec5 + (fSlow12 * self.fRec2[1]));
             self.fVec10[(self.IOTA & 2047) as usize] = fTemp3;
             self.fRec2[0] = self.fVec10[((self.IOTA - iSlow16) & 2047) as usize];
-            let mut fRec3: f32 = (0.0 - (fSlow12 * fTemp3));
-            let mut fTemp4: f32 = (self.fRec2[1] + (fRec3 + (fSlow12 * self.fRec0[1])));
+            let mut fRec3: f32 = 0.0 - (fSlow12 * fTemp3);
+            let mut fTemp4: f32 = self.fRec2[1] + (fRec3 + (fSlow12 * self.fRec0[1]));
             self.fVec11[(self.IOTA & 1023) as usize] = fTemp4;
             self.fRec0[0] = self.fVec11[((self.IOTA - iSlow17) & 1023) as usize];
-            let mut fRec1: f32 = (0.0 - (fSlow12 * fTemp4));
-            output[i as usize] = ((fRec1 + self.fRec0[1]) as f32);
+            let mut fRec1: f32 = 0.0 - (fSlow12 * fTemp4);
+            output[i as usize] = (fRec1 + self.fRec0[1]) as f32;
             self.fRec9[1] = self.fRec9[0];
-            self.IOTA = (self.IOTA + 1);
+            self.IOTA = self.IOTA + 1;
             self.fRec8[1] = self.fRec8[0];
             self.fRec11[1] = self.fRec11[0];
             self.fRec10[1] = self.fRec10[0];
@@ -1954,9 +1954,9 @@ impl Compressor {
 
     pub fn instanceConstants(&mut self, sample_rate: i32) {
         self.fSampleRate = sample_rate;
-        self.fConst0 = f32::min(192000.0, f32::max(1.0, (self.fSampleRate as f32)));
-        self.fConst1 = (2.0 / self.fConst0);
-        self.fConst2 = (1.0 / self.fConst0);
+        self.fConst0 = f32::min(192000.0, f32::max(1.0, self.fSampleRate as f32));
+        self.fConst1 = 2.0 / self.fConst0;
+        self.fConst2 = 1.0 / self.fConst0;
     }
 
     pub fn instanceInit(&mut self, sample_rate: i32) {
@@ -2024,26 +2024,25 @@ impl AudioEffect for Compressor {
             self.instanceInit(actual_samplerate);
         }
 
-        let mut fSlow0: f32 = (self.fHslider0 as f32);
-        let mut fSlow1: f32 = f32::exp((0.0 - (self.fConst1 / fSlow0)));
-        let mut fSlow2: f32 = (((1.0 / (self.fHslider1 as f32)) + -1.0) * (1.0 - fSlow1));
-        let mut fSlow3: f32 = f32::exp((0.0 - (self.fConst2 / fSlow0)));
-        let mut fSlow4: f32 = f32::exp((0.0 - (self.fConst2 / (self.fHslider2 as f32))));
-        let mut fSlow5: f32 = (self.fHslider3 as f32);
+        let fSlow0: f32 = self.fHslider0 as f32;
+        let fSlow1: f32 = f32::exp(0.0 - (self.fConst1 / fSlow0));
+        let fSlow2: f32 = ((1.0 / (self.fHslider1 as f32)) + -1.0) * (1.0 - fSlow1);
+        let fSlow3: f32 = f32::exp(0.0 - (self.fConst2 / fSlow0));
+        let fSlow4: f32 = f32::exp(0.0 - (self.fConst2 / (self.fHslider2 as f32)));
+        let fSlow5: f32 = self.fHslider3 as f32;
         for i in 0..count {
-            let mut fTemp0: f32 = (input[i as usize] as f32);
+            let mut fTemp0: f32 = input[i as usize] as f32;
             let mut fTemp1: f32 = f32::abs(fTemp0);
-            let mut fTemp2: f32 = if (((self.fRec1[1] > fTemp1) as i32) as i32 == 1) {
+            let mut fTemp2: f32 = if ((self.fRec1[1] > fTemp1) as i32) as i32 == 1 {
                 fSlow4
             } else {
                 fSlow3
             };
-            self.fRec2[0] = ((self.fRec2[1] * fTemp2) + (fTemp1 * (1.0 - fTemp2)));
+            self.fRec2[0] = (self.fRec2[1] * fTemp2) + (fTemp1 * (1.0 - fTemp2));
             self.fRec1[0] = self.fRec2[0];
-            self.fRec0[0] = ((fSlow1 * self.fRec0[1])
-                + (fSlow2 * f32::max(((20.0 * f32::log10(self.fRec1[0])) - fSlow5), 0.0)));
-            output[i as usize] =
-                ((fTemp0 * f32::powf(10.0, (0.0500000007 * self.fRec0[0]))) as f32);
+            self.fRec0[0] = (fSlow1 * self.fRec0[1])
+                + (fSlow2 * f32::max((20.0 * f32::log10(self.fRec1[0])) - fSlow5, 0.0));
+            output[i as usize] = (fTemp0 * f32::powf(10.0, 0.0500000007 * self.fRec0[0])) as f32;
             self.fRec2[1] = self.fRec2[0];
             self.fRec1[1] = self.fRec1[0];
             self.fRec0[1] = self.fRec0[0];
