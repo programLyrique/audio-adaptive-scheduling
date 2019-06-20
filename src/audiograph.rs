@@ -104,6 +104,8 @@ impl DspNode {
             "guitar" => Box::new(faust_effect::Guitar::from_node_infos(&node_infos)),
             "transpose" => Box::new(faust_effect::Transposer::from_node_infos(&node_infos)),
             "zita_reverb" => Box::new(faust_effect::ZitaReverb::from_node_infos(&node_infos)),
+            "freeverb" => Box::new(faust_effect::MonoFreeverb::from_node_infos(&node_infos)),
+            "compressor" => Box::new(faust_effect::Compressor::from_node_infos(&node_infos)),
             "sink" => Box::new(InputsOutputsAdaptor::new(
                 node_infos.nb_inlets as usize,
                 nb_channels,

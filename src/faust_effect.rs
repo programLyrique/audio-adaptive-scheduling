@@ -1492,3 +1492,561 @@ impl AudioEffect for ZitaReverb {
         }
     }
 }
+
+/****************************************
+** Mono freeverb
+****************************************/
+
+pub struct MonoFreeverb {
+    fDummy: f32,
+    fHslider0: f32,
+    fHslider1: f32,
+    fRec9: [f32; 2],
+    IOTA: i32,
+    fVec0: [f32; 8192],
+    fSampleRate: i32,
+    fConst0: f32,
+    fConst1: f32,
+    fHslider2: f32,
+    fRec8: [f32; 2],
+    fRec11: [f32; 2],
+    fVec1: [f32; 8192],
+    fConst2: f32,
+    fRec10: [f32; 2],
+    fRec13: [f32; 2],
+    fVec2: [f32; 8192],
+    fConst3: f32,
+    fRec12: [f32; 2],
+    fRec15: [f32; 2],
+    fVec3: [f32; 8192],
+    fConst4: f32,
+    fRec14: [f32; 2],
+    fRec17: [f32; 2],
+    fVec4: [f32; 8192],
+    fConst5: f32,
+    fRec16: [f32; 2],
+    fRec19: [f32; 2],
+    fVec5: [f32; 8192],
+    fConst6: f32,
+    fRec18: [f32; 2],
+    fRec21: [f32; 2],
+    fVec6: [f32; 8192],
+    fConst7: f32,
+    fRec20: [f32; 2],
+    fRec23: [f32; 2],
+    fVec7: [f32; 8192],
+    fConst8: f32,
+    fRec22: [f32; 2],
+    fHslider3: f32,
+    fVec8: [f32; 2048],
+    fConst9: f32,
+    fRec6: [f32; 2],
+    fVec9: [f32; 2048],
+    fConst10: f32,
+    fRec4: [f32; 2],
+    fVec10: [f32; 2048],
+    fConst11: f32,
+    fRec2: [f32; 2],
+    fVec11: [f32; 1024],
+    fConst12: f32,
+    fRec0: [f32; 2],
+}
+
+impl MonoFreeverb {
+    pub fn init() -> MonoFreeverb {
+        MonoFreeverb {
+            fDummy: 0 as f32,
+            fHslider0: 0.0,
+            fHslider1: 0.0,
+            fRec9: [0.0; 2],
+            IOTA: 0,
+            fVec0: [0.0; 8192],
+            fSampleRate: 0,
+            fConst0: 0.0,
+            fConst1: 0.0,
+            fHslider2: 0.0,
+            fRec8: [0.0; 2],
+            fRec11: [0.0; 2],
+            fVec1: [0.0; 8192],
+            fConst2: 0.0,
+            fRec10: [0.0; 2],
+            fRec13: [0.0; 2],
+            fVec2: [0.0; 8192],
+            fConst3: 0.0,
+            fRec12: [0.0; 2],
+            fRec15: [0.0; 2],
+            fVec3: [0.0; 8192],
+            fConst4: 0.0,
+            fRec14: [0.0; 2],
+            fRec17: [0.0; 2],
+            fVec4: [0.0; 8192],
+            fConst5: 0.0,
+            fRec16: [0.0; 2],
+            fRec19: [0.0; 2],
+            fVec5: [0.0; 8192],
+            fConst6: 0.0,
+            fRec18: [0.0; 2],
+            fRec21: [0.0; 2],
+            fVec6: [0.0; 8192],
+            fConst7: 0.0,
+            fRec20: [0.0; 2],
+            fRec23: [0.0; 2],
+            fVec7: [0.0; 8192],
+            fConst8: 0.0,
+            fRec22: [0.0; 2],
+            fHslider3: 0.0,
+            fVec8: [0.0; 2048],
+            fConst9: 0.0,
+            fRec6: [0.0; 2],
+            fVec9: [0.0; 2048],
+            fConst10: 0.0,
+            fRec4: [0.0; 2],
+            fVec10: [0.0; 2048],
+            fConst11: 0.0,
+            fRec2: [0.0; 2],
+            fVec11: [0.0; 1024],
+            fConst12: 0.0,
+            fRec0: [0.0; 2],
+        }
+    }
+
+    pub fn instanceResetUserInterface(&mut self) {
+        self.fHslider0 = 0.5;
+        self.fHslider1 = 0.5;
+        self.fHslider2 = 0.5;
+        self.fHslider3 = 0.5;
+    }
+
+    pub fn instanceClear(&mut self) {
+        for l0 in 0..2 {
+            self.fRec9[l0 as usize] = 0.0;
+        }
+        self.IOTA = 0;
+        for l1 in 0..8192 {
+            self.fVec0[l1 as usize] = 0.0;
+        }
+        for l2 in 0..2 {
+            self.fRec8[l2 as usize] = 0.0;
+        }
+        for l3 in 0..2 {
+            self.fRec11[l3 as usize] = 0.0;
+        }
+        for l4 in 0..8192 {
+            self.fVec1[l4 as usize] = 0.0;
+        }
+        for l5 in 0..2 {
+            self.fRec10[l5 as usize] = 0.0;
+        }
+        for l6 in 0..2 {
+            self.fRec13[l6 as usize] = 0.0;
+        }
+        for l7 in 0..8192 {
+            self.fVec2[l7 as usize] = 0.0;
+        }
+        for l8 in 0..2 {
+            self.fRec12[l8 as usize] = 0.0;
+        }
+        for l9 in 0..2 {
+            self.fRec15[l9 as usize] = 0.0;
+        }
+        for l10 in 0..8192 {
+            self.fVec3[l10 as usize] = 0.0;
+        }
+        for l11 in 0..2 {
+            self.fRec14[l11 as usize] = 0.0;
+        }
+        for l12 in 0..2 {
+            self.fRec17[l12 as usize] = 0.0;
+        }
+        for l13 in 0..8192 {
+            self.fVec4[l13 as usize] = 0.0;
+        }
+        for l14 in 0..2 {
+            self.fRec16[l14 as usize] = 0.0;
+        }
+        for l15 in 0..2 {
+            self.fRec19[l15 as usize] = 0.0;
+        }
+        for l16 in 0..8192 {
+            self.fVec5[l16 as usize] = 0.0;
+        }
+        for l17 in 0..2 {
+            self.fRec18[l17 as usize] = 0.0;
+        }
+        for l18 in 0..2 {
+            self.fRec21[l18 as usize] = 0.0;
+        }
+        for l19 in 0..8192 {
+            self.fVec6[l19 as usize] = 0.0;
+        }
+        for l20 in 0..2 {
+            self.fRec20[l20 as usize] = 0.0;
+        }
+        for l21 in 0..2 {
+            self.fRec23[l21 as usize] = 0.0;
+        }
+        for l22 in 0..8192 {
+            self.fVec7[l22 as usize] = 0.0;
+        }
+        for l23 in 0..2 {
+            self.fRec22[l23 as usize] = 0.0;
+        }
+        for l24 in 0..2048 {
+            self.fVec8[l24 as usize] = 0.0;
+        }
+        for l25 in 0..2 {
+            self.fRec6[l25 as usize] = 0.0;
+        }
+        for l26 in 0..2048 {
+            self.fVec9[l26 as usize] = 0.0;
+        }
+        for l27 in 0..2 {
+            self.fRec4[l27 as usize] = 0.0;
+        }
+        for l28 in 0..2048 {
+            self.fVec10[l28 as usize] = 0.0;
+        }
+        for l29 in 0..2 {
+            self.fRec2[l29 as usize] = 0.0;
+        }
+        for l30 in 0..1024 {
+            self.fVec11[l30 as usize] = 0.0;
+        }
+        for l31 in 0..2 {
+            self.fRec0[l31 as usize] = 0.0;
+        }
+    }
+
+    pub fn instanceConstants(&mut self, sample_rate: i32) {
+        self.fSampleRate = sample_rate;
+        self.fConst0 = f32::min(192000.0, f32::max(1.0, (self.fSampleRate as f32)));
+        self.fConst1 = (((0.0253061224 * self.fConst0) as i32) as f32);
+        self.fConst2 = (((0.0269387756 * self.fConst0) as i32) as f32);
+        self.fConst3 = (((0.0289569162 * self.fConst0) as i32) as f32);
+        self.fConst4 = (((0.0307482984 * self.fConst0) as i32) as f32);
+        self.fConst5 = (((0.0322448984 * self.fConst0) as i32) as f32);
+        self.fConst6 = (((0.033809524 * self.fConst0) as i32) as f32);
+        self.fConst7 = (((0.0353061222 * self.fConst0) as i32) as f32);
+        self.fConst8 = (((0.0366666652 * self.fConst0) as i32) as f32);
+        self.fConst9 = (((0.0126077095 * self.fConst0) as i32) as f32);
+        self.fConst10 = (((0.00999999978 * self.fConst0) as i32) as f32);
+        self.fConst11 = (((0.00773242628 * self.fConst0) as i32) as f32);
+        self.fConst12 = (((0.00510204071 * self.fConst0) as i32) as f32);
+    }
+
+    pub fn instanceInit(&mut self, sample_rate: i32) {
+        self.instanceConstants(sample_rate);
+        self.instanceResetUserInterface();
+        self.instanceClear();
+    }
+
+    pub fn new(fb1: f32, fb2: f32, damp: f32, spread: f32) -> MonoFreeverb {
+        let mut mono_freeverb = MonoFreeverb::init();
+        mono_freeverb.instanceInit(44_100);
+        mono_freeverb.setControlVariables(fb1, fb2, damp, spread);
+        mono_freeverb
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> MonoFreeverb {
+        let fb1 = node_infos.more["fb1"]
+            .parse()
+            .expect("fb1 must be a float in [0,1]");
+        let fb2 = node_infos.more["fb2"]
+            .parse()
+            .expect("fb2 must be a float in [0,1]");
+        let damp = node_infos.more["damp"]
+            .parse()
+            .expect("damp must be a float in [0,1]");
+        let spread = node_infos.more["spread"]
+            .parse()
+            .expect("spread must be a float in [0,1]");
+        let mono_freeverb = MonoFreeverb::new(fb1, fb2, damp, spread);
+        mono_freeverb.check_io_node_infos(node_infos);
+        mono_freeverb
+    }
+
+    pub fn setControlVariables(&mut self, fb1: f32, fb2: f32, damp: f32, spread: f32) {
+        self.fHslider0 = fb1;
+        self.fHslider1 = damp;
+        self.fHslider2 = spread;
+        self.fHslider3 = fb2;
+    }
+}
+
+impl fmt::Display for MonoFreeverb {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "freeverb({}, {}, {}, {})",
+            self.fHslider0, self.fHslider3, self.fHslider1, self.fHslider2
+        )
+    }
+}
+
+impl AudioEffect for MonoFreeverb {
+    fn nb_inputs(&self) -> usize {
+        return 1;
+    }
+    fn nb_outputs(&self) -> usize {
+        return 1;
+    }
+
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]) {
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
+        let actual_samplerate = outputs[0].samplerate as i32;
+
+        let input = inputs[0].buffer();
+        let output = outputs[0].buffer_mut();
+        let count = output.len();
+
+        if self.fSampleRate != actual_samplerate {
+            self.instanceInit(actual_samplerate);
+        }
+
+        let mut fSlow0: f32 = (self.fHslider0 as f32);
+        let mut fSlow1: f32 = (self.fHslider1 as f32);
+        let mut fSlow2: f32 = (1.0 - fSlow1);
+        let mut fSlow3: f32 = (self.fHslider2 as f32);
+        let mut iSlow4: i32 = ((self.fConst1 + fSlow3) as i32);
+        let mut iSlow5: i32 = ((self.fConst2 + fSlow3) as i32);
+        let mut iSlow6: i32 = ((self.fConst3 + fSlow3) as i32);
+        let mut iSlow7: i32 = ((self.fConst4 + fSlow3) as i32);
+        let mut iSlow8: i32 = ((self.fConst5 + fSlow3) as i32);
+        let mut iSlow9: i32 = ((self.fConst6 + fSlow3) as i32);
+        let mut iSlow10: i32 = ((self.fConst7 + fSlow3) as i32);
+        let mut iSlow11: i32 = ((self.fConst8 + fSlow3) as i32);
+        let mut fSlow12: f32 = (self.fHslider3 as f32);
+        let mut fSlow13: f32 = (fSlow3 + -1.0);
+        let mut iSlow14: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst9 + fSlow13))) as i32);
+        let mut iSlow15: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst10 + fSlow13))) as i32);
+        let mut iSlow16: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst11 + fSlow13))) as i32);
+        let mut iSlow17: i32 = (f32::min(1024.0, f32::max(0.0, (self.fConst12 + fSlow13))) as i32);
+        for i in 0..count {
+            let mut fTemp0: f32 = (input[i as usize] as f32);
+            self.fRec9[0] = ((fSlow1 * self.fRec9[1]) + (fSlow2 * self.fRec8[1]));
+            self.fVec0[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec9[0]));
+            self.fRec8[0] = self.fVec0[((self.IOTA - iSlow4) & 8191) as usize];
+            self.fRec11[0] = ((fSlow1 * self.fRec11[1]) + (fSlow2 * self.fRec10[1]));
+            self.fVec1[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec11[0]));
+            self.fRec10[0] = self.fVec1[((self.IOTA - iSlow5) & 8191) as usize];
+            self.fRec13[0] = ((fSlow1 * self.fRec13[1]) + (fSlow2 * self.fRec12[1]));
+            self.fVec2[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec13[0]));
+            self.fRec12[0] = self.fVec2[((self.IOTA - iSlow6) & 8191) as usize];
+            self.fRec15[0] = ((fSlow1 * self.fRec15[1]) + (fSlow2 * self.fRec14[1]));
+            self.fVec3[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec15[0]));
+            self.fRec14[0] = self.fVec3[((self.IOTA - iSlow7) & 8191) as usize];
+            self.fRec17[0] = ((fSlow1 * self.fRec17[1]) + (fSlow2 * self.fRec16[1]));
+            self.fVec4[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec17[0]));
+            self.fRec16[0] = self.fVec4[((self.IOTA - iSlow8) & 8191) as usize];
+            self.fRec19[0] = ((fSlow1 * self.fRec19[1]) + (fSlow2 * self.fRec18[1]));
+            self.fVec5[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec19[0]));
+            self.fRec18[0] = self.fVec5[((self.IOTA - iSlow9) & 8191) as usize];
+            self.fRec21[0] = ((fSlow1 * self.fRec21[1]) + (fSlow2 * self.fRec20[1]));
+            self.fVec6[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec21[0]));
+            self.fRec20[0] = self.fVec6[((self.IOTA - iSlow10) & 8191) as usize];
+            self.fRec23[0] = ((fSlow1 * self.fRec23[1]) + (fSlow2 * self.fRec22[1]));
+            self.fVec7[(self.IOTA & 8191) as usize] = (fTemp0 + (fSlow0 * self.fRec23[0]));
+            self.fRec22[0] = self.fVec7[((self.IOTA - iSlow11) & 8191) as usize];
+            let mut fTemp1: f32 = ((((((((self.fRec8[0] + self.fRec10[0]) + self.fRec12[0])
+                + self.fRec14[0])
+                + self.fRec16[0])
+                + self.fRec18[0])
+                + self.fRec20[0])
+                + self.fRec22[0])
+                + (fSlow12 * self.fRec6[1]));
+            self.fVec8[(self.IOTA & 2047) as usize] = fTemp1;
+            self.fRec6[0] = self.fVec8[((self.IOTA - iSlow14) & 2047) as usize];
+            let mut fRec7: f32 = (0.0 - (fSlow12 * fTemp1));
+            let mut fTemp2: f32 = (self.fRec6[1] + (fRec7 + (fSlow12 * self.fRec4[1])));
+            self.fVec9[(self.IOTA & 2047) as usize] = fTemp2;
+            self.fRec4[0] = self.fVec9[((self.IOTA - iSlow15) & 2047) as usize];
+            let mut fRec5: f32 = (0.0 - (fSlow12 * fTemp2));
+            let mut fTemp3: f32 = (self.fRec4[1] + (fRec5 + (fSlow12 * self.fRec2[1])));
+            self.fVec10[(self.IOTA & 2047) as usize] = fTemp3;
+            self.fRec2[0] = self.fVec10[((self.IOTA - iSlow16) & 2047) as usize];
+            let mut fRec3: f32 = (0.0 - (fSlow12 * fTemp3));
+            let mut fTemp4: f32 = (self.fRec2[1] + (fRec3 + (fSlow12 * self.fRec0[1])));
+            self.fVec11[(self.IOTA & 1023) as usize] = fTemp4;
+            self.fRec0[0] = self.fVec11[((self.IOTA - iSlow17) & 1023) as usize];
+            let mut fRec1: f32 = (0.0 - (fSlow12 * fTemp4));
+            output[i as usize] = ((fRec1 + self.fRec0[1]) as f32);
+            self.fRec9[1] = self.fRec9[0];
+            self.IOTA = (self.IOTA + 1);
+            self.fRec8[1] = self.fRec8[0];
+            self.fRec11[1] = self.fRec11[0];
+            self.fRec10[1] = self.fRec10[0];
+            self.fRec13[1] = self.fRec13[0];
+            self.fRec12[1] = self.fRec12[0];
+            self.fRec15[1] = self.fRec15[0];
+            self.fRec14[1] = self.fRec14[0];
+            self.fRec17[1] = self.fRec17[0];
+            self.fRec16[1] = self.fRec16[0];
+            self.fRec19[1] = self.fRec19[0];
+            self.fRec18[1] = self.fRec18[0];
+            self.fRec21[1] = self.fRec21[0];
+            self.fRec20[1] = self.fRec20[0];
+            self.fRec23[1] = self.fRec23[0];
+            self.fRec22[1] = self.fRec22[0];
+            self.fRec6[1] = self.fRec6[0];
+            self.fRec4[1] = self.fRec4[0];
+            self.fRec2[1] = self.fRec2[0];
+            self.fRec0[1] = self.fRec0[0];
+        }
+    }
+}
+
+/****************************************
+** Compressor
+****************************************/
+
+pub struct Compressor {
+    fDummy: f32,
+    fSampleRate: i32,
+    fConst0: f32,
+    fConst1: f32,
+    fHslider0: f32,
+    fHslider1: f32,
+    fConst2: f32,
+    fHslider2: f32,
+    fRec2: [f32; 2],
+    fRec1: [f32; 2],
+    fHslider3: f32,
+    fRec0: [f32; 2],
+}
+
+impl Compressor {
+    pub fn init() -> Compressor {
+        Compressor {
+            fDummy: 0 as f32,
+            fSampleRate: 0,
+            fConst0: 0.0,
+            fConst1: 0.0,
+            fHslider0: 0.0,
+            fHslider1: 0.0,
+            fConst2: 0.0,
+            fHslider2: 0.0,
+            fRec2: [0.0; 2],
+            fRec1: [0.0; 2],
+            fHslider3: 0.0,
+            fRec0: [0.0; 2],
+        }
+    }
+
+    pub fn instanceResetUserInterface(&mut self) {
+        self.fHslider0 = 0.5;
+        self.fHslider1 = 2.0;
+        self.fHslider2 = 1.0;
+        self.fHslider3 = 20.0;
+    }
+
+    pub fn instanceClear(&mut self) {
+        for l0 in 0..2 {
+            self.fRec2[l0 as usize] = 0.0;
+        }
+        for l1 in 0..2 {
+            self.fRec1[l1 as usize] = 0.0;
+        }
+        for l2 in 0..2 {
+            self.fRec0[l2 as usize] = 0.0;
+        }
+    }
+
+    pub fn instanceConstants(&mut self, sample_rate: i32) {
+        self.fSampleRate = sample_rate;
+        self.fConst0 = f32::min(192000.0, f32::max(1.0, (self.fSampleRate as f32)));
+        self.fConst1 = (2.0 / self.fConst0);
+        self.fConst2 = (1.0 / self.fConst0);
+    }
+
+    pub fn instanceInit(&mut self, sample_rate: i32) {
+        self.instanceConstants(sample_rate);
+        self.instanceResetUserInterface();
+        self.instanceClear();
+    }
+
+    pub fn new(ratio: f32, thresh: f32, att: f32, rel: f32) -> Compressor {
+        let mut compressor = Compressor::init();
+        compressor.instanceInit(44_100);
+        compressor.setControlVariables(ratio, thresh, att, rel);
+        compressor
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Compressor {
+        let ratio = node_infos.more["ratio"]
+            .parse()
+            .expect("ratio must be a float");
+        let thresh = node_infos.more["thresh"]
+            .parse()
+            .expect("thresh must be a float");
+        let att = node_infos.more["att"].parse().expect("att must be a float");
+        let rel = node_infos.more["rel"].parse().expect("rel must be a float");
+        let compressor = Compressor::new(ratio, thresh, att, rel);
+        compressor.check_io_node_infos(node_infos);
+        compressor
+    }
+
+    pub fn setControlVariables(&mut self, ratio: f32, thresh: f32, att: f32, rel: f32) {
+        self.fHslider0 = att;
+        self.fHslider1 = ratio;
+        self.fHslider2 = rel;
+        self.fHslider3 = thresh;
+    }
+}
+
+impl fmt::Display for Compressor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "compressor({}, {}, {}, {})",
+            self.fHslider1, self.fHslider3, self.fHslider0, self.fHslider2
+        )
+    }
+}
+
+impl AudioEffect for Compressor {
+    fn nb_inputs(&self) -> usize {
+        return 1;
+    }
+    fn nb_outputs(&self) -> usize {
+        return 1;
+    }
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]) {
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
+        let actual_samplerate = outputs[0].samplerate as i32;
+
+        let input = inputs[0].buffer();
+        let output = outputs[0].buffer_mut();
+        let count = output.len();
+
+        if self.fSampleRate != actual_samplerate {
+            self.instanceInit(actual_samplerate);
+        }
+
+        let mut fSlow0: f32 = (self.fHslider0 as f32);
+        let mut fSlow1: f32 = f32::exp((0.0 - (self.fConst1 / fSlow0)));
+        let mut fSlow2: f32 = (((1.0 / (self.fHslider1 as f32)) + -1.0) * (1.0 - fSlow1));
+        let mut fSlow3: f32 = f32::exp((0.0 - (self.fConst2 / fSlow0)));
+        let mut fSlow4: f32 = f32::exp((0.0 - (self.fConst2 / (self.fHslider2 as f32))));
+        let mut fSlow5: f32 = (self.fHslider3 as f32);
+        for i in 0..count {
+            let mut fTemp0: f32 = (input[i as usize] as f32);
+            let mut fTemp1: f32 = f32::abs(fTemp0);
+            let mut fTemp2: f32 = if (((self.fRec1[1] > fTemp1) as i32) as i32 == 1) {
+                fSlow4
+            } else {
+                fSlow3
+            };
+            self.fRec2[0] = ((self.fRec2[1] * fTemp2) + (fTemp1 * (1.0 - fTemp2)));
+            self.fRec1[0] = self.fRec2[0];
+            self.fRec0[0] = ((fSlow1 * self.fRec0[1])
+                + (fSlow2 * f32::max(((20.0 * f32::log10(self.fRec1[0])) - fSlow5), 0.0)));
+            output[i as usize] =
+                ((fTemp0 * f32::powf(10.0, (0.0500000007 * self.fRec0[0]))) as f32);
+            self.fRec2[1] = self.fRec2[0];
+            self.fRec1[1] = self.fRec1[0];
+            self.fRec0[1] = self.fRec0[0];
+        }
+    }
+}

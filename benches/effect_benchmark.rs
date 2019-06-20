@@ -196,6 +196,29 @@ fn zita_reverb_bench(c: &mut Criterion) {
     );
 }
 
+fn freeverb_bench(c: &mut Criterion) {
+    let mut rng = SmallRng::seed_from_u64(345987);
+    let unity_interval = Uniform::new_inclusive(-1., 1.);
+    c.bench_function_over_inputs(
+        "freeverb",
+        move |b: &mut Bencher, n: &usize| {
+            let mut freeverb = MonoFreeverb::new(0.2, 0.6, 0.8, 0.4);
+            let mut input = vec![DspEdge::new(1, 1, *n, 44100); 1];
+            //let size = input[0].buffer().len();
+            input[0].buffer_mut().copy_from_slice(
+                &rng.sample_iter(&unity_interval)
+                    .take(*n)
+                    .collect::<Vec<f32>>(),
+            );
+            b.iter(|| {
+                let mut output = vec![DspEdge::new(1, 1, *n, 44100); 1];
+                freeverb.process(&input, &mut output)
+            })
+        },
+        vec![64, 128, 256, 512, 1024, 2048, 4096],
+    );
+}
+
 criterion_group!(
     benches,
     osc_bench,
@@ -204,6 +227,7 @@ criterion_group!(
     mixer_bench,
     guitar_bench,
     transpose_bench,
-    zita_reverb_bench
+    zita_reverb_bench,
+    freeverb_bench
 );
 criterion_main!(benches);
