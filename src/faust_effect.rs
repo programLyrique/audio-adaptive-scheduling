@@ -2299,14 +2299,14 @@ impl AudioEffect for Cubicnl {
             self.instanceInit(actual_samplerate);
         }
 
-        let mut fSlow0: f32 = (self.fHslider0 as f32);
-        let mut fSlow1: f32 = f32::powf(10.0, (2.0 * (self.fHslider1 as f32)));
+        let fSlow0: f32 = self.fHslider0 as f32;
+        let fSlow1: f32 = f32::powf(10.0, 2.0 * (self.fHslider1 as f32));
         for i in 0..count {
             let mut fTemp0: f32 = f32::max(
                 -1.0,
-                f32::min(1.0, (fSlow0 + (fSlow1 * (input[i as usize] as f32)))),
+                f32::min(1.0, fSlow0 + (fSlow1 * (input[i as usize] as f32))),
             );
-            output[i as usize] = ((fTemp0 * (1.0 - (0.333333343 * faustpower2_f(fTemp0)))) as f32);
+            output[i as usize] = (fTemp0 * (1.0 - (0.333333343 * faustpower2_f(fTemp0)))) as f32;
         }
     }
 }
