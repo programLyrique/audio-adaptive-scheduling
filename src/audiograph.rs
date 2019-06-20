@@ -101,6 +101,8 @@ impl DspNode {
                 nb_channels,
                 node_infos.nb_outlets as usize,
             )),
+            //TODO: Stack overflow if there
+            // Need to use ulimit -s 32768 to increase the size of the stack
             "guitar" => Box::new(faust_effect::Guitar::from_node_infos(&node_infos)),
             "transpose" => Box::new(faust_effect::Transposer::from_node_infos(&node_infos)),
             "zita_reverb" => Box::new(faust_effect::ZitaReverb::from_node_infos(&node_infos)),
@@ -127,6 +129,7 @@ impl DspNode {
                 }
             }
         };
+
         DspNode {
             node_infos,
             node_processor,

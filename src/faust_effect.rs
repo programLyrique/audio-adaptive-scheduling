@@ -2049,3 +2049,162 @@ impl AudioEffect for Compressor {
         }
     }
 }
+
+/****************************************
+** Autowah
+****************************************/
+
+pub struct Autowah {
+    fDummy: f32,
+    fHslider0: f32,
+    fSampleRate: i32,
+    fConst0: f32,
+    fConst1: f32,
+    fConst2: f32,
+    fRec2: [f32; 2],
+    fRec1: [f32; 2],
+    fConst3: f32,
+    fConst4: f32,
+    fRec3: [f32; 2],
+    fRec4: [f32; 2],
+    fRec0: [f32; 3],
+}
+
+impl Autowah {
+    pub fn init() -> Autowah {
+        Autowah {
+            fDummy: 0 as f32,
+            fHslider0: 0.0,
+            fSampleRate: 0,
+            fConst0: 0.0,
+            fConst1: 0.0,
+            fConst2: 0.0,
+            fRec2: [0.0; 2],
+            fRec1: [0.0; 2],
+            fConst3: 0.0,
+            fConst4: 0.0,
+            fRec3: [0.0; 2],
+            fRec4: [0.0; 2],
+            fRec0: [0.0; 3],
+        }
+    }
+
+    pub fn instanceResetUserInterface(&mut self) {
+        self.fHslider0 = 0.899999976;
+    }
+
+    pub fn instanceClear(&mut self) {
+        for l0 in 0..2 {
+            self.fRec2[l0 as usize] = 0.0;
+        }
+        for l1 in 0..2 {
+            self.fRec1[l1 as usize] = 0.0;
+        }
+        for l2 in 0..2 {
+            self.fRec3[l2 as usize] = 0.0;
+        }
+        for l3 in 0..2 {
+            self.fRec4[l3 as usize] = 0.0;
+        }
+        for l4 in 0..3 {
+            self.fRec0[l4 as usize] = 0.0;
+        }
+    }
+
+    pub fn instanceConstants(&mut self, sample_rate: i32) {
+        self.fSampleRate = sample_rate;
+        self.fConst0 = f32::min(192000.0, f32::max(1.0, (self.fSampleRate as f32)));
+        self.fConst1 = f32::exp((0.0 - (10.0 / self.fConst0)));
+        self.fConst2 = (1.0 - self.fConst1);
+        self.fConst3 = (1413.71667 / self.fConst0);
+        self.fConst4 = (2827.43335 / self.fConst0);
+    }
+
+    pub fn instanceInit(&mut self, sample_rate: i32) {
+        self.instanceConstants(sample_rate);
+        self.instanceResetUserInterface();
+        self.instanceClear();
+    }
+
+    pub fn new(level: f32) -> Autowah {
+        let mut autowah = Autowah::init();
+        autowah.instanceInit(44_100);
+        autowah.setControlVariables(level);
+        autowah
+    }
+
+    pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Autowah {
+        let level = node_infos.more["level"]
+            .parse()
+            .expect("level is a float in [0,1]");
+        let autowah = Autowah::new(level);
+        autowah.check_io_node_infos(node_infos);
+        autowah
+    }
+
+    pub fn setControlVariables(&mut self, level: f32) {
+        self.fHslider0 = level;
+    }
+}
+
+impl fmt::Display for Autowah {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "autowah({})", self.fHslider0)
+    }
+}
+
+impl AudioEffect for Autowah {
+    fn nb_inputs(&self) -> usize {
+        return 1;
+    }
+    fn nb_outputs(&self) -> usize {
+        return 1;
+    }
+
+    fn process(&mut self, inputs: &[DspEdge], outputs: &mut [DspEdge]) {
+        debug_assert_eq!(inputs.len(), self.nb_inputs());
+        debug_assert_eq!(outputs.len(), self.nb_outputs());
+        let actual_samplerate = outputs[0].samplerate as i32;
+
+        let input = inputs[0].buffer();
+        let output = outputs[0].buffer_mut();
+        let count = output.len();
+
+        //Constants have to be changed if we change the samplerate...
+        // We should smooth it actually...
+        if self.fSampleRate != actual_samplerate {
+            self.instanceInit(actual_samplerate);
+        }
+
+        let mut fSlow0: f32 = (self.fHslider0 as f32);
+        let mut fSlow1: f32 = (1.0 - fSlow0);
+        for i in 0..count {
+            let mut fTemp0: f32 = (input[i as usize] as f32);
+            let mut fTemp1: f32 = f32::abs(fTemp0);
+            self.fRec2[0] = f32::max(
+                fTemp1,
+                ((self.fConst1 * self.fRec2[1]) + (self.fConst2 * fTemp1)),
+            );
+            self.fRec1[0] =
+                ((0.999000013 * self.fRec1[1]) + (9.99999975e-05 * f32::powf(4.0, self.fRec2[0])));
+            let mut fTemp2: f32 = f32::powf(2.0, (2.29999995 * self.fRec2[0]));
+            let mut fTemp3: f32 = (1.0
+                - (self.fConst3
+                    * (fTemp2 / f32::powf(2.0, ((2.0 * (1.0 - self.fRec2[0])) + 1.0)))));
+            self.fRec3[0] = ((0.999000013 * self.fRec3[1])
+                - (0.00200000009 * (fTemp3 * f32::cos((self.fConst4 * fTemp2)))));
+            self.fRec4[0] =
+                ((0.999000013 * self.fRec4[1]) + (0.00100000005 * faustpower2_f(fTemp3)));
+            self.fRec0[0] = ((fTemp0 * self.fRec1[0])
+                - ((self.fRec3[0] * self.fRec0[1]) + (self.fRec4[0] * self.fRec0[2])));
+            output[i as usize] =
+                (((fSlow1 * fTemp0) + (fSlow0 * (self.fRec0[0] - self.fRec0[1]))) as f32);
+            self.fRec2[1] = self.fRec2[0];
+            self.fRec1[1] = self.fRec1[0];
+            self.fRec3[1] = self.fRec3[0];
+            self.fRec4[1] = self.fRec4[0];
+            self.fRec0[2] = self.fRec0[1];
+            self.fRec0[1] = self.fRec0[0];
+        }
+    }
+}
