@@ -1975,7 +1975,7 @@ impl Compressor {
     pub fn from_node_infos(node_infos: &audiograph_parser::Node) -> Compressor {
         let ratio = node_infos.more["ratio"]
             .parse()
-            .expect("ratio must be a float");
+            .expect("ratio must be a float >= 1");
         let thresh = node_infos.more["thresh"]
             .parse()
             .expect("thresh must be a float");

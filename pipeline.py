@@ -45,6 +45,7 @@ gen_option.add_argument("-z", "--from-graphs", help="Use a set of already genera
 parser.add_argument("--merge-resamplers", help="Merge resampler optmization", action="store_true")
 parser.add_argument("--no-error", help="Continue in spite of errors", action="store_true")
 parser.add_argument("--dir", help="Directory where to process")
+parser.add_argument("--slow", help="Use a dictionnary with slow nodes", action="store_true")
 parser.add_argument("--tikz", help="Save graphs in tikz format", action="store_true")
 
 args = parser.parse_args()
@@ -54,6 +55,8 @@ args = parser.parse_args()
 graph_exec = "./target/release/audiograph"
 graph_enum = "../ims-analysis/main.native"
 nodes_dic = "../ims-analysis/nodes.ag"
+if args.slow:
+    nodes_dic = "../ims-analysis/nodes_slow.ag"
 try:
     with open("pipeline.json", "r") as f:
         print("Loading pipeline.json")
